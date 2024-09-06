@@ -9,6 +9,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Limit configurations to those Jolt supports
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Distribution")
 
+# OpenAL build options
+set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
+set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ALSOFT_TESTS OFF CACHE BOOL "" FORCE)
+
 # When turning this option on, the Jolt will be compiled using doubles for positions. This allows for much bigger worlds.
 set(DOUBLE_PRECISION ON)
 
@@ -34,7 +39,12 @@ FetchContent_Declare(
     GIT_TAG v4.0.2
     SOURCE_SUBDIR Build
 )
-FetchContent_MakeAvailable(glfw glew glm JoltPhysics)
+FetchContent_Declare(
+        openal
+        GIT_REPOSITORY https://github.com/kcat/openal-soft.git
+        GIT_TAG 1.23.1
+)
+FetchContent_MakeAvailable(glfw glew glm JoltPhysics openal)
 
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
@@ -45,6 +55,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${JoltPhysics_SOURCE_DIR}
     ${glm_SOURCE_DIR}
     ${glew_SOURCE_DIR}/include
+    ${openal_SOURCE_DIR}/include
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -52,6 +63,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     glm
     libglew_static
+    OpenAL::OpenAL
 )
 
 # Settings for Windows
