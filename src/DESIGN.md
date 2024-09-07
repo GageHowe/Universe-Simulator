@@ -11,10 +11,13 @@ Spaceship simulation in 3D, with a high amount of realism. This includes:
 * If something moves, it will continue to move
 * Sounds don't travel in space.
 
+### Software Design
+Split functionality will be implemented using modules and namespaces. OOP-based classes like GameState, PhysicsEngine, Graphics etc are an over-engineered solution, and we won't need to instantiate multiple of these at any time.
+
 ### Physics
 Scale is everything. Massive ships, planets, etc. luckily, Jolt's optimized 64-bit simulation offers vastly larger precision at a 5% premium over 32-bit simulation.
 
-### Sound design
+### Sound Design
 Cool, sterile spaceship
 https://www.google.com/search?client=firefox-b-e&q=sounds+of+a+server+farm
 
