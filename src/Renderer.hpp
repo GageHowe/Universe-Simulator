@@ -1,1 +1,0 @@
-// this will handle rendering when main.cpp reaches a breaking point
