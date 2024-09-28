@@ -5,7 +5,7 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
-#include "Jolt/jolt.h"
+// #include "Jolt/jolt.h"
 #include "physics.hpp"
 
 class GameState {
@@ -67,8 +67,8 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(800, 800, "OpenGL Multithreaded", NULL, NULL);
-    if (window == NULL) { std::cout << "Failed to create GLFW window" << std::endl; glfwTerminate(); return -1; }
+    window = glfwCreateWindow(800, 800, "OpenGL Multithreaded", nullptr, nullptr);
+    if (window == nullptr) { std::cout << "Failed to create GLFW window" << std::endl; glfwTerminate(); return -1; }
 
     glfwMakeContextCurrent(window);
 
