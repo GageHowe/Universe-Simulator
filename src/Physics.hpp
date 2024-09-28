@@ -1,5 +1,5 @@
 // This code is adapted from: https://github.com/jrouwe/JoltPhysics/blob/master/HelloWorld/HelloWorld.cpp
-// it needs to be modularized for use in the simulation application
+// it probably needs to be modularized for use in the simulation application
 
 #include <Jolt/Jolt.h> // The Jolt headers don't include Jolt.h. Always include Jolt.h before including any other Jolt header.
 #include <Jolt/RegisterTypes.h>

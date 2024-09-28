@@ -1,4 +1,4 @@
-//// THIS SOMEWHAT WORKS; IT'S A BLACK ROTATING TRIANGLE. IT SHOULD HAVE THE BRICK TEXTURE
+//// THIS SOMEWHAT WORKS; IT'S A BLACK ROTATING PYRAMID. IT SHOULD HAVE THE BRICK TEXTURE NOT BE BLACK BUT THAT'S OK FOR NOW
 //
 ////------- Ignore this ----------
 //#include<filesystem>
@@ -112,7 +112,7 @@
 //	std::string texPath = "/Resources/YoutubeOpenGL 7 - Going 3D/";
 //
 //	// Texture
-//	Texture brickTex((parentDir + texPath + "assets/bricks.jpg").c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
+//	Texture brickTex((parentDir + texPath + "assets/bricks.png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
 //	brickTex.texUnit(shaderProgram, "tex0", 0);
 //
 //	// Original code from the tutorial
