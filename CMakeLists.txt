@@ -47,15 +47,15 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/kcat/openal-soft.git
         GIT_TAG 1.23.1
 )
-FetchContent_Declare(assimp
-        GIT_REPOSITORY https://github.com/assimp/assimp.git
-        GIT_TAG master
-)
-FetchContent_MakeAvailable(glfw glew glm JoltPhysics openal assimp)
-
-set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+#FetchContent_Declare(assimp
+#        GIT_REPOSITORY https://github.com/assimp/assimp.git
+#        GIT_TAG master
+#)
+FetchContent_MakeAvailable(glfw glew glm JoltPhysics openal) # assimp
+#
+#set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+#set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
+#set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
 
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.c")
 
@@ -68,7 +68,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${glm_SOURCE_DIR}
         ${glew_SOURCE_DIR}/include
         ${openal_SOURCE_DIR}/include
-        ${assimp_SOURCE_DIR}/include
+        #${assimp_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/libraries/include
 )
@@ -79,7 +79,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         glm
         libglew_static
         OpenAL::OpenAL
-        assimp
+        #assimp
 )
 
 # Settings for Windows
