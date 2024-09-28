@@ -1,4 +1,4 @@
-//// THIS SOMEWHAT WORKS; IT'S JUST A STATIC ORANGE TRIANGLE
+//// THIS SOMEWHAT WORKS; IT'S A BLACK ROTATING TRIANGLE. IT SHOULD HAVE THE BRICK TEXTURE
 //
 ////------- Ignore this ----------
 //#include<filesystem>
@@ -112,7 +112,7 @@
 //	std::string texPath = "/Resources/YoutubeOpenGL 7 - Going 3D/";
 //
 //	// Texture
-//	Texture brickTex((parentDir + texPath + "assets/bricks.png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
+//	Texture brickTex((parentDir + texPath + "assets/bricks.jpg").c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
 //	brickTex.texUnit(shaderProgram, "tex0", 0);
 //
 //	// Original code from the tutorial
@@ -142,7 +142,7 @@
 //		double crntTime = glfwGetTime();
 //		if (crntTime - prevTime >= 1 / 60)
 //		{
-//			rotation += 0.5f;
+//			rotation += 0.01f;
 //			prevTime = crntTime;
 //		}
 //
