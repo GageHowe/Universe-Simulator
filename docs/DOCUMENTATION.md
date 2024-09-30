@@ -34,3 +34,9 @@ Bodies can be connected to each other using CONSTRAINTS. The following constrain
 ### Broad Phase
 When bodies are added to the PhysicsSystem, they are inserted in the broad phase (BroadPhaseQuadTree). This provides quick coarse collision detection based on the axis aligned bounding box (AABB) of a body.
 
+# types
+    NON_MOVING - Layer for all static objects.
+    MOVING - Layer for all regular dynamic bodies.
+    DEBRIS - Layer for all debris dynamic bodies, we want to test these only against the static geometry because we want to save some simulation cost.
+    BULLET - Layer for high detail collision bodies that we attach to regular dynamic bodies. These are not used for simulation but we want extra precision when we shoot with bullets.
+    WEAPON - This is a query layer so we don't create any bodies with this layer but we use it when doing ray cast querying for our weapon system.

@@ -8,43 +8,8 @@
 // #include "Jolt/jolt.h"
 #include "physics.hpp"
 
-class GameState {
-    std::mutex stateMutex;
-public:
-    void update() {
-        std::lock_guard<std::mutex> lock(stateMutex);
-        std::cout << "\n\n";
-        // Add your physics update logic here
-    	// physics_system.Update(cDeltaTime, cCollisionSteps, &temp_allocator, &job_system);
-    }
-
-    void render() {
-        std::lock_guard<std::mutex> lock(stateMutex);
-        // std::cout << ".";
-        // Add your OpenGL rendering code here
-    }
-};
-
-GameState gameState;
 std::atomic<bool> running(true);
 GLFWwindow* window;
-
-void simulationThread() {
-    const std::chrono::duration<double> timeStep(1.0 / 60.0);
-    auto previousTime = std::chrono::high_resolution_clock::now();
-
-    while (running) {
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        auto elapsedTime = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - previousTime);
-
-        if (elapsedTime >= timeStep) {
-            gameState.update();
-            previousTime = currentTime;
-        } else {
-            std::this_thread::sleep_for(timeStep - elapsedTime);
-        }
-    }
-}
 
 int main() {
     // Initialize GLFW
@@ -105,7 +70,6 @@ int main() {
 	physics_system.OptimizeBroadPhase();
 
     // START THREADS
-    std::thread simThread(simulationThread);
 
 	glfwMakeContextCurrent(window);
 
@@ -118,13 +82,11 @@ int main() {
 
     	glClear(GL_COLOR_BUFFER_BIT);
 
-    	gameState.render();
     	glfwSwapBuffers(window);
     }
 
     // Cleanup
     running = false;
-    simThread.join();
     glfwDestroyWindow(window); glfwTerminate();
     return 0;
 }

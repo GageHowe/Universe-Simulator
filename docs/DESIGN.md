@@ -1,10 +1,6 @@
 # DESIGN
 
-    NON_MOVING - Layer for all static objects.
-    MOVING - Layer for all regular dynamic bodies.
-    DEBRIS - Layer for all debris dynamic bodies, we want to test these only against the static geometry because we want to save some simulation cost.
-    BULLET - Layer for high detail collision bodies that we attach to regular dynamic bodies. These are not used for simulation but we want extra precision when we shoot with bullets.
-    WEAPON - This is a query layer so we don't create any bodies with this layer but we use it when doing ray cast querying for our weapon system.
+Make it work now, refactor it later (modularize, multithread, etc)
 
 Spaceship simulation in 3D, with a high amount of realism. This includes:
 * Bullets fired affect the velocity of the ship
