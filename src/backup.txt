@@ -1,5 +1,3 @@
-// THIS CURRENTLY DOESN'T COMPILE
-
 #include <iostream>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -7,105 +5,25 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
+// #include "Jolt/jolt.h"
 #include "physics.hpp"
-#include "Texture.h"
-#include "shaderClass.h"
-#include "VAO.h"
-#include "VBO.h"
-#include "EBO.h"
 
-const unsigned int width = 800;
-const unsigned int height = 800;
 
-// Vertices coordinates
-GLfloat vertices[] = {
-    // COORDINATES       COLORS           TexCoord
-    -0.5f, 0.0f,  0.5f,  0.83f, 0.70f, 0.44f, 0.0f, 0.0f,
-    -0.5f, 0.0f, -0.5f,  0.83f, 0.70f, 0.44f, 5.0f, 0.0f,
-     0.5f, 0.0f, -0.5f,  0.83f, 0.70f, 0.44f, 0.0f, 0.0f,
-     0.5f, 0.0f,  0.5f,  0.83f, 0.70f, 0.44f, 5.0f, 0.0f,
-     0.0f, 0.8f,  0.0f,  0.92f, 0.86f, 0.76f, 2.5f, 5.0f
-};
-
-// Indices for vertices order
-GLuint indices[] = {
-    0, 1, 2,
-    0, 2, 3,
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-    3, 0, 4
-};
 
 class GameState {
     std::mutex stateMutex;
-    Shader shaderProgram;
-    VAO VAO1;
-    VBO VBO1;
-    EBO EBO1;
-    Texture brickTex;
-    float rotation;
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-
 public:
-    GameState() :
-        shaderProgram("assets/default.vert", "assets/default.frag"),
-        VBO1(vertices, sizeof(vertices)),
-        EBO1(indices, sizeof(indices)),
-        brickTex("path/to/brick.png", GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE),
-        rotation(0.0f)
-    {
-        VAO1.Bind();
-        VAO1.LinkAttrib(VBO1, 0, 3, GL_FLOAT, 8 * sizeof(float), (void*)0);
-        VAO1.LinkAttrib(VBO1, 1, 3, GL_FLOAT, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-        VAO1.LinkAttrib(VBO1, 2, 2, GL_FLOAT, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-        VAO1.Unbind();
-        VBO1.Unbind();
-        EBO1.Unbind();
-
-        brickTex.texUnit(shaderProgram, "tex0", 0);
-
-        view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f, -2.0f));
-        proj = glm::perspective(glm::radians(45.0f), (float)width / height, 0.1f, 100.0f);
-    }
-
-    void update() {
+    void update() { // physics logic goes here
         std::lock_guard<std::mutex> lock(stateMutex);
-        rotation += 0.5f;
-        model = glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+        std::cout << "\n\n";
+    	// std::cout << "sphere rotation in quaternion: " << body_interface.GetRotation(sphere_id) << std::endl;
+    	// physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
     }
 
     void render() {
         std::lock_guard<std::mutex> lock(stateMutex);
-
-        shaderProgram.Activate();
-
-        int modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        int viewLoc = glGetUniformLocation(shaderProgram.ID, "view");
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        int projLoc = glGetUniformLocation(shaderProgram.ID, "proj");
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-
-        GLuint uniID = glGetUniformLocation(shaderProgram.ID, "scale");
-        glUniform1f(uniID, 0.5f);
-
-        brickTex.Bind();
-        VAO1.Bind();
-        glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
-    }
-
-    void cleanup() {
-        VAO1.Delete();
-        VBO1.Delete();
-        EBO1.Delete();
-        brickTex.Delete();
-        shaderProgram.Delete();
+        // std::cout << ".";
+        // Add your OpenGL rendering code here
     }
 };
 
@@ -130,19 +48,6 @@ void simulationThread() {
     }
 }
 
-void renderThread() {
-    glfwMakeContextCurrent(window);
-
-    glEnable(GL_DEPTH_TEST);
-
-    while (running) {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        gameState.render();
-        glfwSwapBuffers(window);
-    }
-}
-
 int main() {
     // Initialize GLFW
     if (!glfwInit()) {
@@ -154,30 +59,32 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(width, height, "OpenGL Multithreaded", NULL, NULL);
-    if (window == NULL) { std::cout << "Failed to create GLFW window" << std::endl; glfwTerminate(); return -1; }
+    window = glfwCreateWindow(800, 800, "OpenGL Multithreaded", nullptr, nullptr);
+    if (window == nullptr) { std::cout << "Failed to create GLFW window" << std::endl; glfwTerminate(); return -1; }
 
     glfwMakeContextCurrent(window);
 
     if (!gladLoadGL()) { std::cout << "Failed to initialize GLAD" << std::endl; return -1; }
 
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, 800, 800);
     glClearColor(0.07f, 0.13f, 0.17f, 1.0f);
 
     // START THREADS
     std::thread simThread(simulationThread);
-    std::thread rendThread(renderThread);
 
-    // MAIN LOOP
+    // MAIN LOOP - do graphics stuff here
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-        // Handle any main thread logic here
+
+    	glClear(GL_COLOR_BUFFER_BIT);
+
+    	gameState.render();
+    	glfwSwapBuffers(window);
     }
 
     // Cleanup
     running = false;
-    simThread.join(); rendThread.join();
-    gameState.cleanup();
+    simThread.join();
     glfwDestroyWindow(window); glfwTerminate();
     return 0;
 }

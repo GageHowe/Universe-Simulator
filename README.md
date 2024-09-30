@@ -6,5 +6,5 @@
 ## TODO
 * implement object rendering inside render or main thread
 * Fix textures showing up as black
-* Get simulation and rendering working concurrently
+[x] Get simulation and rendering working concurrently
 * Implement math for getting rotation/position from physics object
