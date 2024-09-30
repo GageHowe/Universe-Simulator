@@ -1,13 +1,18 @@
 #include <iostream>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include<glm/common.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <thread>
 #include <chrono>
 #include <atomic>
 #include <mutex>
 // #include "Jolt/jolt.h"
 #include "physics.hpp"
-
 std::atomic<bool> running(true);
 GLFWwindow* window;
 
@@ -76,8 +81,15 @@ int main() {
     // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-        // Handle any main thread logic here
-    	std::cout << "sphere rotation in quaternion: " << body_interface.GetRotation(sphere_id) << std::endl;
+
+    	Quat q = body_interface.GetRotation(sphere_id);
+    	float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
+
+    	std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
+
+    	glm::quat glmQuat = glm::make_quat(a); // Create a GLM quaternion
+    	glm::mat4 rotationMatrix = glm::toMat4(glmQuat); // Convert GLM quaternion to a rotation matrix
+
     	physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
 
     	glClear(GL_COLOR_BUFFER_BIT);
