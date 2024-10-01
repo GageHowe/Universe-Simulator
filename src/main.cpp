@@ -27,6 +27,10 @@ GLFWwindow* window;
 const unsigned int width = 1280;
 const unsigned int height = 720;
 
+glm::vec3 cameraOffset = glm::vec3(0.0f, 2.0f, -5.0f); // Adjust these values to change the camera's relative position
+float cameraLerpFactor = 0.1f; // Adjust this to change how quickly the camera follows the cube (0.0 to 1.0)
+
+
 // Vertices coordinates for a cube
 GLfloat vertices[] =
 { //     COORDINATES     /        COLORS          /   TexCoord  //
@@ -166,9 +170,9 @@ int main() {
 	body_interface.AddBody(floor->GetID(), EActivation::DontActivate);
 	BodyCreationSettings sphere_settings(new SphereShape(0.5f), RVec3(0.0_r, 2.0_r, 0.0_r), Quat::sIdentity(), EMotionType::Dynamic, Layers::MOVING);
 	BodyID sphere_id = body_interface.CreateAndAddBody(sphere_settings, EActivation::Activate);
-	body_interface.SetLinearVelocity(sphere_id, Vec3(0.0f, -5.0f, 0.0f));
+	body_interface.SetLinearVelocity(sphere_id, Vec3(0.0f, 10.0f, 0.0f));
 	body_interface.SetAngularVelocity(sphere_id, Vec3(1.0f, 1.0f, 1.0f));
-	// body_interface.AddTorque(sphere_id, Vec3(40.0f, 0.0f, 0.0f));
+	body_interface.AddTorque(sphere_id, Vec3(40.0f, 0.0f, 0.0f));
 	const float cDeltaTime = 1.0f / 60.0f;
 	physics_system.OptimizeBroadPhase();
 
@@ -178,35 +182,48 @@ int main() {
 
     // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
-    	std::cout << "Time elapsed: " << glfwGetTime() - prevTime << std::endl;
-    	Quat q = body_interface.GetRotation(sphere_id);
-    	float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
-    	std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
-    	glm::quat glmQuat = glm::make_quat(a);
-    	glm::mat4 rotationMatrix = glm::toMat4(glmQuat); // Convert GLM quaternion to a rotation matrix
-		RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
-    	std::cout << "physics position: " << physicsPosition << std::endl;
-    	glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ()));
-    	glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
+    std::cout << "Time elapsed: " << glfwGetTime() - prevTime << std::endl;
+    Quat q = body_interface.GetRotation(sphere_id);
+    float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
+    std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
+    glm::quat glmQuat = glm::make_quat(a);
+    glm::mat4 rotationMatrix = glm::mat4_cast(glmQuat); // Convert GLM quaternion to a rotation matrix
+    RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
+    std::cout << "physics position: " << physicsPosition << std::endl;
+    glm::vec3 cubePosition = glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ());
+    glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), cubePosition);
+    glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
 
-    	physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
+    // Update camera position and orientation
+    glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(cameraOffset, 1.0f));
+    glm::vec3 targetCameraPosition = cubePosition + rotatedOffset;
+    camera.Position = glm::mix(camera.Position, targetCameraPosition, cameraLerpFactor);
 
-    	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		shaderProgram.Activate(); // Tell OpenGL which Shader Program we want to use
+    // Calculate camera orientation based on cube's rotation
+    glm::vec3 cameraForward = -glm::normalize(rotatedOffset);
+    glm::vec3 cameraUp = glm::vec3(rotationMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
 
-    	camera.Inputs(window);
-    	camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix"); // Updates and exports the camera matrix to the Vertex Shader
+    camera.Orientation = cameraForward;
+    camera.Up = cameraUp;
 
-    	GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
-    	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+    physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
 
-		glUniform1f(uniID, 0.5f); // Assigns a value to the uniform; NOTE: Must always be done after activating the Shader Program
-		brickTex.Bind(); // Binds texture so that is appears in rendering
-		VAO1.Bind(); // Bind the VAO so OpenGL knows to use it
-		glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
-    	glfwSwapBuffers(window);
-    	glfwPollEvents();
-    }
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    shaderProgram.Activate();
+
+    // Use the updated Matrix function
+    camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix");
+
+    GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+
+    glUniform1f(uniID, 0.5f);
+    brickTex.Bind();
+    VAO1.Bind();
+    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+}
 
 	// cleanup
 	VAO1.Delete();

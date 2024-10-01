@@ -4,6 +4,7 @@ This is for my own use, for the purpose of understanding more about OpenGL and J
 
 * https://jrouwe.github.io/JoltPhysics/
 * https://learnopengl.com/
+* https://www.youtube.com/playlist?list=PLPaoO-vpZnumdcb4tZc4x5Q-v7CkrQ6M-
 
 ### Notes
 BodyInterface::CreateBody -> BodyInterface::AddBody -> BodyInterface::RemoveBody -> BodyInterface::DestroyBody
