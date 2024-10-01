@@ -27,25 +27,42 @@ GLFWwindow* window;
 const unsigned int width = 1280;
 const unsigned int height = 720;
 
-// Vertices coordinates
+// Vertices coordinates for a cube
 GLfloat vertices[] =
-{ //     COORDINATES     /        COLORS      /   TexCoord  //
-	-0.5f, 0.0f,  0.5f,     0.83f, 0.70f, 0.44f,	0.0f, 0.0f,
-	-0.5f, 0.0f, -0.5f,     0.83f, 0.70f, 0.44f,	5.0f, 0.0f,
-	 0.5f, 0.0f, -0.5f,     0.83f, 0.70f, 0.44f,	0.0f, 0.0f,
-	 0.5f, 0.0f,  0.5f,     0.83f, 0.70f, 0.44f,	5.0f, 0.0f,
-	 0.0f, 0.8f,  0.0f,     0.92f, 0.86f, 0.76f,	2.5f, 5.0f
+{ //     COORDINATES     /        COLORS          /   TexCoord  //
+	// Front face
+	-0.5f, -0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 0.0f, // Bottom-left
+	 0.5f, -0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 0.0f, // Bottom-right
+	 0.5f,  0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 1.0f, // Top-right
+	-0.5f,  0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 1.0f, // Top-left
+	// Back face
+	-0.5f, -0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 0.0f, // Bottom-left
+	 0.5f, -0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 0.0f, // Bottom-right
+	 0.5f,  0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 1.0f, // Top-right
+	-0.5f,  0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 1.0f  // Top-left
 };
 
 // Indices for vertices order
 GLuint indices[] =
 {
+	// Front face
 	0, 1, 2,
-	0, 2, 3,
-	0, 1, 4,
-	1, 2, 4,
-	2, 3, 4,
-	3, 0, 4
+	2, 3, 0,
+	// Right face
+	1, 5, 6,
+	6, 2, 1,
+	// Back face
+	7, 6, 5,
+	5, 4, 7,
+	// Left face
+	4, 0, 3,
+	3, 7, 4,
+	// Bottom face
+	4, 5, 1,
+	1, 0, 4,
+	// Top face
+	3, 2, 6,
+	6, 7, 3
 };
 
 void checkShaderCompileStatus(GLuint shader) {
