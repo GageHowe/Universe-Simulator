@@ -88,14 +88,9 @@ int main() {
 
 	Shader shaderProgram("assets/default.vert", "assets/default.frag");
 
-	 // Generates Vertex Array Object and binds it
-	VAO VAO1;
-	VAO1.Bind();
-
-	// Generates Vertex Buffer Object and links it to vertices
-	VBO VBO1(vertices, sizeof(vertices));
-	// Generates Element Buffer Object and links it to indices
-	EBO EBO1(indices, sizeof(indices));
+	VAO VAO1; VAO1.Bind(); // Generates Vertex Array Object and binds it
+	VBO VBO1(vertices, sizeof(vertices)); // Generates Vertex Buffer Object and links it to vertices
+	EBO EBO1(indices, sizeof(indices)); // Generates Element Buffer Object and links it to indices
 
 	// Links VBO attributes such as coordinates and colors to VAO
 	VAO1.LinkAttrib(VBO1, 0, 3, GL_FLOAT, 8 * sizeof(float), (void*)0);
@@ -155,8 +150,8 @@ int main() {
 	BodyCreationSettings sphere_settings(new SphereShape(0.5f), RVec3(0.0_r, 2.0_r, 0.0_r), Quat::sIdentity(), EMotionType::Dynamic, Layers::MOVING);
 	BodyID sphere_id = body_interface.CreateAndAddBody(sphere_settings, EActivation::Activate);
 	body_interface.SetLinearVelocity(sphere_id, Vec3(0.0f, -5.0f, 0.0f));
-	// body_interface.AddTorque(sphere_id, Vec3(1.0f, 1.0f, 1.0f));
 	body_interface.SetAngularVelocity(sphere_id, Vec3(1.0f, 1.0f, 1.0f));
+	// body_interface.AddTorque(sphere_id, Vec3(40.0f, 0.0f, 0.0f));
 	const float cDeltaTime = 1.0f / 60.0f;
 	physics_system.OptimizeBroadPhase();
 
@@ -170,9 +165,10 @@ int main() {
     	Quat q = body_interface.GetRotation(sphere_id);
     	float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
     	std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
-    	glm::quat glmQuat = glm::make_quat(a); // Create a GLM quaternion
+    	glm::quat glmQuat = glm::make_quat(a);
     	glm::mat4 rotationMatrix = glm::toMat4(glmQuat); // Convert GLM quaternion to a rotation matrix
 		RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
+    	std::cout << "physics position: " << physicsPosition << std::endl;
     	glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ()));
     	glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
 
@@ -181,20 +177,15 @@ int main() {
     	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderProgram.Activate(); // Tell OpenGL which Shader Program we want to use
 
-    	// Handles camera inputs
     	camera.Inputs(window);
-    	// Updates and exports the camera matrix to the Vertex Shader
-    	camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix");
+    	camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix"); // Updates and exports the camera matrix to the Vertex Shader
 
     	GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
     	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
 
-		// Assigns a value to the uniform; NOTE: Must always be done after activating the Shader Program
-		// glUniform1f(uniID, 0.5f);
-		// Binds texture so that is appears in rendering
-		brickTex.Bind();
-		// Bind the VAO so OpenGL knows to use it
-		VAO1.Bind();
+		glUniform1f(uniID, 0.5f); // Assigns a value to the uniform; NOTE: Must always be done after activating the Shader Program
+		brickTex.Bind(); // Binds texture so that is appears in rendering
+		VAO1.Bind(); // Bind the VAO so OpenGL knows to use it
 		glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
     	glfwSwapBuffers(window);
     	glfwPollEvents();
