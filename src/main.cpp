@@ -11,10 +11,62 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
-// #include "Jolt/jolt.h"
+#include <filesystem>
+
 #include "physics.hpp"
+#include "shaderClass.h"
+#include "VAO.h"
+#include "VBO.h"
+#include "EBO.h"
+#include "Texture.h"
+#include "Camera.h"
+
 std::atomic<bool> running(true);
 GLFWwindow* window;
+
+const unsigned int width = 1280;
+const unsigned int height = 720;
+
+// Vertices coordinates
+GLfloat vertices[] =
+{ //     COORDINATES     /        COLORS      /   TexCoord  //
+	-0.5f, 0.0f,  0.5f,     0.83f, 0.70f, 0.44f,	0.0f, 0.0f,
+	-0.5f, 0.0f, -0.5f,     0.83f, 0.70f, 0.44f,	5.0f, 0.0f,
+	 0.5f, 0.0f, -0.5f,     0.83f, 0.70f, 0.44f,	0.0f, 0.0f,
+	 0.5f, 0.0f,  0.5f,     0.83f, 0.70f, 0.44f,	5.0f, 0.0f,
+	 0.0f, 0.8f,  0.0f,     0.92f, 0.86f, 0.76f,	2.5f, 5.0f
+};
+
+// Indices for vertices order
+GLuint indices[] =
+{
+	0, 1, 2,
+	0, 2, 3,
+	0, 1, 4,
+	1, 2, 4,
+	2, 3, 4,
+	3, 0, 4
+};
+
+void checkShaderCompileStatus(GLuint shader) {
+	GLint status;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+	if (status == GL_FALSE) {
+		GLint logLength;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+		GLchar* buffer = new GLchar[logLength];
+		GLsizei bufferSize;
+		glGetShaderInfoLog(shader, logLength, &bufferSize, buffer);
+		std::cout << "unsuccessful" << std::endl;
+		std::cout << buffer << std::endl;
+		delete[] buffer;
+
+		return;
+	}
+	else {
+		std::cout << "successful" << std::endl;
+	}
+}
 
 int main() {
     // Initialize GLFW
@@ -27,14 +79,48 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(800, 800, "OpenGL Multithreaded", nullptr, nullptr);
+    window = glfwCreateWindow(width, height, "JopenGL", nullptr, nullptr);
     if (window == nullptr) { std::cout << "Failed to create GLFW window" << std::endl; glfwTerminate(); return -1; }
 
     glfwMakeContextCurrent(window);
 
     if (!gladLoadGL()) { std::cout << "Failed to initialize GLAD" << std::endl; return -1; }
 
-    glViewport(0, 0, 800, 800);
+	Shader shaderProgram("assets/default.vert", "assets/default.frag");
+
+	 // Generates Vertex Array Object and binds it
+	VAO VAO1;
+	VAO1.Bind();
+
+	// Generates Vertex Buffer Object and links it to vertices
+	VBO VBO1(vertices, sizeof(vertices));
+	// Generates Element Buffer Object and links it to indices
+	EBO EBO1(indices, sizeof(indices));
+
+	// Links VBO attributes such as coordinates and colors to VAO
+	VAO1.LinkAttrib(VBO1, 0, 3, GL_FLOAT, 8 * sizeof(float), (void*)0);
+	VAO1.LinkAttrib(VBO1, 1, 3, GL_FLOAT, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+	VAO1.LinkAttrib(VBO1, 2, 2, GL_FLOAT, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+	VAO1.Unbind();
+	VBO1.Unbind();
+	EBO1.Unbind();
+
+	// Gets ID of uniform called "scale"
+	GLuint uniID = glGetUniformLocation(shaderProgram.ID, "scale");
+
+	std::string parentDir = (filesystem::current_path().filesystem::path::parent_path()).string();
+	std::string texPath = "/Resources/YoutubeOpenGL 7 - Going 3D/";
+
+	Texture brickTex((parentDir + texPath + "assets/bricks.png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
+	brickTex.texUnit(shaderProgram, "tex0", 0);
+
+	double prevTime = glfwGetTime();
+
+	glEnable(GL_DEPTH_TEST);
+
+	Camera camera(width, height, glm::vec3(0.0f, 0.0f, 2.0f));
+
+    glViewport(0, 0, width, height);
     glClearColor(0.07f, 0.13f, 0.17f, 1.0f);
 
 	// global physics stuff
@@ -80,24 +166,47 @@ int main() {
 
     // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-
+    	std::cout << "Time elapsed: " << glfwGetTime() - prevTime << std::endl;
     	Quat q = body_interface.GetRotation(sphere_id);
     	float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
-
     	std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
-
     	glm::quat glmQuat = glm::make_quat(a); // Create a GLM quaternion
     	glm::mat4 rotationMatrix = glm::toMat4(glmQuat); // Convert GLM quaternion to a rotation matrix
+		RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
+    	glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ()));
+    	glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
 
     	physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
 
-    	glClear(GL_COLOR_BUFFER_BIT);
+    	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		shaderProgram.Activate(); // Tell OpenGL which Shader Program we want to use
 
+    	// Handles camera inputs
+    	camera.Inputs(window);
+    	// Updates and exports the camera matrix to the Vertex Shader
+    	camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix");
+
+    	GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
+    	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+
+		// Assigns a value to the uniform; NOTE: Must always be done after activating the Shader Program
+		// glUniform1f(uniID, 0.5f);
+		// Binds texture so that is appears in rendering
+		brickTex.Bind();
+		// Bind the VAO so OpenGL knows to use it
+		VAO1.Bind();
+		glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
     	glfwSwapBuffers(window);
+    	glfwPollEvents();
     }
 
-    // Cleanup
+	// cleanup
+	VAO1.Delete();
+	VBO1.Delete();
+	EBO1.Delete();
+	brickTex.Delete();
+	shaderProgram.Delete();
+
     running = false;
     glfwDestroyWindow(window); glfwTerminate();
     return 0;
