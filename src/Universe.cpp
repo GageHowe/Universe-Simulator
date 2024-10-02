@@ -18,8 +18,7 @@ void Universe::update(float deltaTime) {
         entity->update(deltaTime);
     }
 
-    // Step the physics simulation
-    // gPhysicsSystem->Update(deltaTime, 1, &temp_allocator, &job_system);
+
 }
 
 void Universe::render() {

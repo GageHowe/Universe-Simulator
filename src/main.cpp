@@ -124,12 +124,30 @@ int main() {
 
 	// Gets ID of uniform called "scale"
 	GLuint uniID = glGetUniformLocation(shaderProgram.ID, "scale");
-
-	std::string parentDir = (filesystem::current_path().filesystem::path::parent_path()).string();
-	std::string texPath = "/Resources/YoutubeOpenGL 7 - Going 3D/";
-
-	Texture brickTex((parentDir + texPath + "assets/bricks.png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE);
-	brickTex.texUnit(shaderProgram, "tex0", 0);
+	//
+	// std::string parentDir = filesystem::current_path().filesystem::path::parent_path().string();
+	// std::string texPath = "\\assets\\";
+	// std::string fullPath = parentDir + texPath + "bricks.jpg";
+	//
+	// if (!std::filesystem::exists(fullPath)) {
+	// 	std::cerr << "Texture file does not exist at: " << fullPath << std::endl;
+	// 	exit(-1);
+	// } else {
+	// 	std::cout << "found at: " << fullPath << std::endl;
+	// }
+	//
+	// std::ifstream file(fullPath, std::ios::binary);
+	// if (!file) {
+	// 	std::cerr << "Cannot open file: " << fullPath << std::endl;
+	// 	exit(-1);
+	// }
+	//
+	// std::vector<char> buffer(std::istreambuf_iterator<char>(file), {});
+	// std::cout << "Successfully read " << buffer.size() << " bytes from file." << std::endl;
+	//
+	// std::cout << "looking for texture at: " << fullPath << std::endl;
+	// Texture brickTex((fullPath).c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE); // this doesn't error so i don't know if it sees the texture
+	// brickTex.texUnit(shaderProgram, "tex0", 0);
 
 	double prevTime = glfwGetTime();
 
@@ -218,8 +236,11 @@ int main() {
 	    GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
 	    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
 
+		GLuint colorLoc = glGetUniformLocation(shaderProgram.ID, "uniformColor");
+		glUniform3f(colorLoc, 1.0f, 0.0f, 0.0f);  // Red color (change as needed)
+
 	    glUniform1f(uniID, 0.5f);
-	    brickTex.Bind();
+	    // brickTex.Bind();
 	    VAO1.Bind();
 	    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
 	    glfwSwapBuffers(window);
@@ -230,7 +251,7 @@ int main() {
 	VAO1.Delete();
 	VBO1.Delete();
 	EBO1.Delete();
-	brickTex.Delete();
+	// brickTex.Delete();
 	shaderProgram.Delete();
 
     running = false;

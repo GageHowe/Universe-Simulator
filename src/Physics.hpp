@@ -1,6 +1,8 @@
 // This code is adapted from: https://github.com/jrouwe/JoltPhysics/blob/master/HelloWorld/HelloWorld.cpp
 // it probably needs to be modularized for use in the simulation application
 
+#pragma once
+
 #include <Jolt/Jolt.h> // The Jolt headers don't include Jolt.h. Always include Jolt.h before including any other Jolt header.
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
@@ -136,7 +138,7 @@ public:
 #endif // JPH_EXTERNAL_PROFILE || JPH_PROFILE_ENABLED
 
 private:
-	BroadPhaseLayer					mObjectToBroadPhase[Layers::NUM_LAYERS];
+	BroadPhaseLayer					mObjectToBroadPhase[Layers::NUM_LAYERS]{};
 };
 
 /// Class that determines if an object layer can collide with a broadphase layer

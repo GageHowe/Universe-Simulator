@@ -10,7 +10,17 @@ Texture::Texture(const char* image, GLenum texType, GLenum slot, GLenum format, 
 	// Flips the image so it appears right side up
 	stbi_set_flip_vertically_on_load(true);
 	// Reads the image from a file and stores it in bytes
+	try {
+		unsigned char* bytes = stbi_load(image, &widthImg, &heightImg, &numColCh, 0);
+	} catch (std::exception e) {
+		std::cout << "Error: " << e.what() << std::endl;
+	}
 	unsigned char* bytes = stbi_load(image, &widthImg, &heightImg, &numColCh, 0);
+	if (bytes == nullptr) {
+		std::cout << "tried to load image " << image << std::endl;
+		std::cerr << "Failed to load image" << std::endl;
+		exit(-1);
+	}
 
 	// Generates an OpenGL texture object
 	glGenTextures(1, &ID);
@@ -40,6 +50,7 @@ Texture::Texture(const char* image, GLenum texType, GLenum slot, GLenum format, 
 
 	// Unbinds the OpenGL Texture object so that it can't accidentally be modified
 	glBindTexture(texType, 0);
+	std::cout << "image size: " << widthImg << " " << heightImg << " " << numColCh << "; Texture ID: " << ID << std::endl;
 }
 
 void Texture::texUnit(Shader& shader, const char* uniform, GLuint unit)
