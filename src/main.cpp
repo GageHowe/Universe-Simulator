@@ -20,6 +20,7 @@
 #include "EBO.h"
 #include "Texture.h"
 #include "Camera.h"
+// #include "Octree.h" // body is ambiguous
 
 std::atomic<bool> running(true);
 GLFWwindow* window;
