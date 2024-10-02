@@ -1,7 +1,12 @@
 // SpaceEntity.h
+
 #pragma once
+
+#ifndef SPACE_ENTITY_H
+#define SPACE_ENTITY_H
+
 #include <glm/glm.hpp>
-#include <Jolt/Jolt.h>
+#include <JoltIncludes.h>
 
 class SpaceEntity {
 public:
@@ -20,3 +25,5 @@ protected:
     glm::vec3 velocity;
     JPH::BodyID bodyID;
 };
+
+#endif

@@ -1,5 +1,9 @@
 // Planet.h
 #pragma once
+
+#ifndef __PLANET_H__
+#define __PLANET_H__
+
 #include "SpaceEntity.h"
 
 class Planet : public SpaceEntity {
@@ -12,3 +16,5 @@ public:
 private:
     float radius;
 };
+
+#endif

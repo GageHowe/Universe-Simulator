@@ -28,8 +28,8 @@ GLFWwindow* window;
 const unsigned int width = 1280;
 const unsigned int height = 720;
 
-glm::vec3 cameraOffset = glm::vec3(0.0f, 2.0f, -5.0f); // Adjust these values to change the camera's relative position
-float cameraLerpFactor = 0.1f; // Adjust this to change how quickly the camera follows the cube (0.0 to 1.0)
+glm::vec3 cameraOffset = glm::vec3(0.0f, 2.0f, -5.0f);
+float cameraLerpFactor = 0.1f; // how quickly the camera follows the cube (0.0 to 1.0)
 
 
 // Vertices coordinates for a cube
@@ -177,54 +177,54 @@ int main() {
 	const float cDeltaTime = 1.0f / 60.0f;
 	physics_system.OptimizeBroadPhase();
 
-    // START THREADS
+	    // START THREADS
 
-	glfwMakeContextCurrent(window);
+		glfwMakeContextCurrent(window);
 
-    // MAIN LOOP
-    while (!glfwWindowShouldClose(window)) {
-    std::cout << "Time elapsed: " << glfwGetTime() - prevTime << std::endl;
-    Quat q = body_interface.GetRotation(sphere_id);
-    float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
-    std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
-    glm::quat glmQuat = glm::make_quat(a);
-    glm::mat4 rotationMatrix = glm::mat4_cast(glmQuat); // Convert GLM quaternion to a rotation matrix
-    RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
-    std::cout << "physics position: " << physicsPosition << std::endl;
-    glm::vec3 cubePosition = glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ());
-    glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), cubePosition);
-    glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
+	    // MAIN LOOP
+	while (!glfwWindowShouldClose(window)) {
+	    std::cout << "Time elapsed: " << glfwGetTime() - prevTime << std::endl;
+	    Quat q = body_interface.GetRotation(sphere_id);
+	    float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
+	    std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
+	    glm::quat glmQuat = glm::make_quat(a);
+	    glm::mat4 rotationMatrix = glm::mat4_cast(glmQuat); // Convert GLM quaternion to a rotation matrix
+	    RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
+	    std::cout << "physics position: " << physicsPosition << std::endl;
+	    glm::vec3 cubePosition = glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ());
+	    glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), cubePosition);
+	    glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
 
-    // Update camera position and orientation
-    glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(cameraOffset, 1.0f));
-    glm::vec3 targetCameraPosition = cubePosition + rotatedOffset;
-    camera.Position = glm::mix(camera.Position, targetCameraPosition, cameraLerpFactor);
+	    // Update camera position and orientation
+	    glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(cameraOffset, 1.0f));
+	    glm::vec3 targetCameraPosition = cubePosition + rotatedOffset;
+	    camera.Position = glm::mix(camera.Position, targetCameraPosition, cameraLerpFactor);
 
-    // Calculate camera orientation based on cube's rotation
-    glm::vec3 cameraForward = -glm::normalize(rotatedOffset);
-    glm::vec3 cameraUp = glm::vec3(rotationMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+	    // Calculate camera orientation based on cube's rotation
+	    glm::vec3 cameraForward = -glm::normalize(rotatedOffset);
+	    glm::vec3 cameraUp = glm::vec3(rotationMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
 
-    camera.Orientation = cameraForward;
-    camera.Up = cameraUp;
+	    camera.Orientation = cameraForward;
+	    camera.Up = cameraUp;
 
-    physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
+	    physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
 
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    shaderProgram.Activate();
+	    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	    shaderProgram.Activate();
 
-    // Use the updated Matrix function
-    camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix");
+	    // Use the updated Matrix function
+	    camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix");
 
-    GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+	    GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
+	    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
 
-    glUniform1f(uniID, 0.5f);
-    brickTex.Bind();
-    VAO1.Bind();
-    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
-    glfwSwapBuffers(window);
-    glfwPollEvents();
-}
+	    glUniform1f(uniID, 0.5f);
+	    brickTex.Bind();
+	    VAO1.Bind();
+	    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
+	    glfwSwapBuffers(window);
+	    glfwPollEvents();
+	}
 
 	// cleanup
 	VAO1.Delete();
