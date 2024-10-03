@@ -19,18 +19,19 @@ public:
     glm::vec3 Orientation = glm::vec3(0.0f, 0.0f, -1.0f);
     glm::vec3 Up = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    glm::vec3 BodyRotation = glm::vec3(0.0f);
+    bool firstClick = true; // Prevents the camera from jumping around when first clicking left click
 
-    // Prevents the camera from jumping around when first clicking left click
-    bool firstClick = true;
-
-    // Stores the width and height of the window
     int width;
     int height;
 
-    // Adjust the speed of the camera and it's sensitivity when looking around
     float speed = 0.01f;
     float sensitivity = 200.0f;
+
+    float speed = 0.1f;
+    float maxSpeed = 1.0f;
+    float acceleration = 0.5f;
+    float deceleration = 0.8f;
+    glm::vec3 velocity = glm::vec3(0.0f);
 
     // Constructors
     Camera(int width, int height, glm::vec3 position);

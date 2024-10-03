@@ -1,3 +1,5 @@
+// IMPORTANT: this app randomly exits with a 0xC00000FD stack overflow. I'm working on it :)
+
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -10,6 +12,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "glm/gtx/string_cast.hpp"
+
+#include <glm/gtc/random.hpp>
+
 
 // Include your provided implementations
 #include "shaderClass.h"
@@ -152,20 +157,18 @@ public:
         vao.Unbind();
     }
 
-    void update(double dt) {
+    void update(double dt) { // verlet integration let's goooooooooo
+        // First half of position update
+        position += velocity * (dt / 2.0);
+
+        // Velocity update
         dvec3 acceleration = force / mass;
         velocity += acceleration * dt;
-        position += velocity * dt;
-        force = dvec3(0.0, 0.0, 0.0);  // Reset force for next frame
 
-        if (glm::any(glm::isnan(position)) || glm::any(glm::isnan(velocity))) {
-            std::cout << "NaN detected! Position: " << glm::to_string(position)
-                      << ", Velocity: " << glm::to_string(velocity)
-                      << ", Force: " << glm::to_string(force)
-                      << ", Mass: " << mass << std::endl;
-        }
+        // Second half of position update
+        position += velocity * (dt / 2.0);
 
-        std::cout << velocity.x << ", " << velocity.y << ", " << velocity.z << std::endl;
+        force = dvec3(0.0, 0.0, 0.0);  // Reset force
     }
 };
 
@@ -263,7 +266,7 @@ void calculateForce(CelestialBody* body, const OctreeNode* node) {
     }
 
     double d = glm::length(node->centerOfMass - body->position);
-    if (d < 1) return;  // Prevent division by zero
+    if (d < 2) return;  // Prevent division by zero by having bodies ignore each other when within x units
 
     if (node->isLeaf() || (node->size / d < theta)) {
         dvec3 direction = glm::normalize(node->centerOfMass - body->position);
@@ -327,22 +330,36 @@ int main() {
         return -1;
     }
     glEnable(GL_DEPTH_TEST);
-
     Shader shader("assets/default.vert", "assets/default.frag");
 
+    // GENERATE BODIES
     std::vector<CelestialBody> celestialBodies;
 
-    // Star
+    double velocityScale = 1.0;
+    glm::dvec3 center(0.0, 0.0, 0.0);
+    glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
-    // position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr)
-    celestialBodies.emplace_back(dvec3(0.0), dvec3(0.0), 2.0, 1.989e10, glm::vec3(1.0f, 0.9f, 0.2f));
+    for (int i = 0; i < 1000; ++i) {
+        glm::dvec3 position = glm::sphericalRand(100.0);
+        glm::dvec3 toCenter = center - position;
+        glm::dvec3 velocity = glm::cross(up, toCenter);
 
-    celestialBodies.emplace_back(dvec3(10.0), dvec3(0.0), 2.0, 1.989e10, glm::vec3(1.0f, 0.9f, 0.2f));
+        // Normalize and scale the velocity
+        velocity = glm::normalize(velocity) * glm::length(toCenter) * velocityScale;
+
+        celestialBodies.emplace_back(
+            position,
+            velocity,
+            3.0,
+            2.0e10,
+            glm::vec3(1.0f, 0.9f, 0.2f)
+        );
+    }
 
     // manages camera and zoom
-    Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 30.0f));
+    Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 150.0f));
     glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
-        if (yoffset == -1) { // zoom out
+        if (yoffset <= -1) { // zoom out
             if (zoomStatus > 2) {
                 zoomStatus = zoomStatus / (2 * -yoffset);
             } else {
@@ -356,7 +373,9 @@ int main() {
             }
         }
         fov = initialFov * initialZoom / zoomStatus;
-        far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value, I need to do the math and figure out what value to use
+        far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
+
+        std::cout << "Far: " << far << " Fov: " << fov << std::endl;
     });
 
     // Set up lighting
