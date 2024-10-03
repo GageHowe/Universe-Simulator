@@ -3,6 +3,7 @@
 
 #include<glad/glad.h>
 #include<string>
+#include <glm/glm.hpp>
 #include<fstream>
 #include<sstream>
 #include<iostream>
@@ -22,6 +23,18 @@ public:
 	void Activate();
 	// Deletes the Shader Program
 	void Delete();
+
+	// New utility functions
+	void setMat4(const std::string &name, const glm::mat4 &mat) const
+	{
+		glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, &mat[0][0]);
+	}
+
+	void setVec3(const std::string &name, const glm::vec3 &value) const
+	{
+		glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]);
+	}
+
 private:
 	// Checks if the different Shaders have compiled properly
 	void compileErrors(unsigned int shader, const char* type);
