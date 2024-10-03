@@ -9,16 +9,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Limit configurations to those Jolt supports
-set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Distribution")
+## Limit configurations to those Jolt supports
+#set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Distribution")
 
 # OpenAL build options
-set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
-set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(ALSOFT_TESTS OFF CACHE BOOL "" FORCE)
+#set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
+#set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
+#set(ALSOFT_TESTS OFF CACHE BOOL "" FORCE)
 
 # When turning this option on, the Jolt will be compiled using doubles for positions. This allows for much bigger worlds.
-set(DOUBLE_PRECISION ON)
+#set(DOUBLE_PRECISION ON)
 
 include(FetchContent) # this makes managing dependencies simpler by automatically downloading them
 FetchContent_Declare(
@@ -36,22 +36,22 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/g-truc/glm.git
         GIT_TAG 0.9.9.8
 )
-FetchContent_Declare(
-        JoltPhysics
-        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-        GIT_TAG v4.0.2
-        SOURCE_SUBDIR Build
-)
-FetchContent_Declare(
-        openal
-        GIT_REPOSITORY https://github.com/kcat/openal-soft.git
-        GIT_TAG 1.23.1
-)
+#FetchContent_Declare(
+#        JoltPhysics
+#        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+#        GIT_TAG v4.0.2
+#        SOURCE_SUBDIR Build
+#)
+#FetchContent_Declare(
+#        openal
+#        GIT_REPOSITORY https://github.com/kcat/openal-soft.git
+#        GIT_TAG 1.23.1
+#)
 #FetchContent_Declare(assimp
 #        GIT_REPOSITORY https://github.com/assimp/assimp.git
 #        GIT_TAG master
 #)
-FetchContent_MakeAvailable(glfw glew glm JoltPhysics openal) # assimp
+FetchContent_MakeAvailable(glfw glew glm) # assimp openal JoltPhysics
 #
 #set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 #set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
@@ -64,10 +64,10 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 # folders include as dependencies
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/include
-        ${JoltPhysics_SOURCE_DIR}
+#       #${JoltPhysics_SOURCE_DIR}
         ${glm_SOURCE_DIR}
         ${glew_SOURCE_DIR}/include
-        ${openal_SOURCE_DIR}/include
+        #${openal_SOURCE_DIR}/include
         #${assimp_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/libraries/include
@@ -75,11 +75,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # linking stage
 target_link_libraries(${PROJECT_NAME} PRIVATE
-        Jolt
+        #Jolt
         glfw
         glm
         libglew_static
-        OpenAL::OpenAL
+        #OpenAL::OpenAL
         #assimp
 )
 

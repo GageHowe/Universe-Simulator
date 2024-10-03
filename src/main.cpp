@@ -26,12 +26,12 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
+const float G = 0.0000002; //6.67430e-11f;  // The Gravitational constant :)
 const float theta = 0.5f;  // Barnes-Hut opening angle
 
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
-constexpr float initialFar = 1000.0f;   float far = initialFar;
+constexpr float initialFar = 5000.0f;   float far = initialFar;
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -394,7 +394,7 @@ int main() {
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        glClearColor(0.0f, 0.0f, 0.1f, 1.0f);
+        glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Update physics
