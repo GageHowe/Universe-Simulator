@@ -2,11 +2,14 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include <memory>
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "glm/gtx/string_cast.hpp"
 
 // Include your provided implementations
 #include "shaderClass.h"
@@ -18,7 +21,11 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
+const float G = 6.67430e-11f;  // The Gravitational constant :)
+const float theta = 0.5f;  // Barnes-Hut opening angle
+
 #define PI 3.14159265
+using dvec3 = glm::dvec3; // double precision for very large or small values
 
 void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int segments) {
     vertices.clear();
@@ -56,9 +63,11 @@ void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& i
 
 class CelestialBody {
 public:
-    glm::vec3 position;
-    glm::vec3 velocity;
-    float radius;
+    dvec3 position;
+    dvec3 velocity;
+    dvec3 force;
+    double radius;
+    double mass;
     glm::vec3 color;
     VAO vao;
     VBO* vbo;
@@ -66,9 +75,9 @@ public:
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
 
-    CelestialBody(const glm::vec3& pos, const glm::vec3& vel, float r, const glm::vec3& col)
-        : position(pos), velocity(vel), radius(r), color(col), vbo(nullptr), ebo(nullptr) {
-        createSphereMesh(vertices, indices, radius, 20);
+    CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
+        : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
+        createSphereMesh(vertices, indices, static_cast<float>(radius), 20);
 
         std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
 
@@ -86,7 +95,6 @@ public:
         ebo->Unbind();
     }
 
-
     ~CelestialBody() {
         delete vbo;
         delete ebo;
@@ -96,9 +104,9 @@ public:
     CelestialBody(const CelestialBody&) = delete;
     CelestialBody& operator=(const CelestialBody&) = delete;
 
-    // Allow moving
     CelestialBody(CelestialBody&& other) noexcept
-        : position(other.position), velocity(other.velocity), radius(other.radius), color(other.color),
+        : position(other.position), velocity(other.velocity), force(other.force),
+          radius(other.radius), mass(other.mass), color(other.color),
           vao(std::move(other.vao)), vbo(other.vbo), ebo(other.ebo),
           vertices(std::move(other.vertices)), indices(std::move(other.indices)) {
         other.vbo = nullptr;
@@ -111,7 +119,9 @@ public:
             delete ebo;
             position = other.position;
             velocity = other.velocity;
+            force = other.force;
             radius = other.radius;
+            mass = other.mass;
             color = other.color;
             vao = std::move(other.vao);
             vbo = other.vbo;
@@ -127,14 +137,9 @@ public:
     void draw(Shader& shader) {
         shader.Activate();
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, position);
+        model = glm::translate(model, glm::vec3(position));  // Convert to float for rendering
         shader.setMat4("model", model);
         shader.setVec3("color", color);
-
-        std::cout << "Drawing celestial body at position: ("
-                  << position.x << ", " << position.y << ", " << position.z
-                  << ") with color: ("
-                  << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
 
         vao.Bind();
         ebo->Bind();
@@ -142,7 +147,136 @@ public:
         ebo->Unbind();
         vao.Unbind();
     }
+
+    void update(double dt) {
+        dvec3 acceleration = force / mass;
+        velocity += acceleration * dt;
+        position += velocity * dt;
+        force = dvec3(0.0, 0.0, 0.0);  // Reset force for next frame
+
+        if (glm::any(glm::isnan(position)) || glm::any(glm::isnan(velocity))) {
+            std::cout << "NaN detected! Position: " << glm::to_string(position)
+                      << ", Velocity: " << glm::to_string(velocity)
+                      << ", Force: " << glm::to_string(force)
+                      << ", Mass: " << mass << std::endl;
+        }
+    }
 };
+
+class OctreeNode {
+public:
+    dvec3 center;
+    double size;
+    dvec3 centerOfMass;
+    double totalMass;
+    std::vector<CelestialBody*> bodies;
+    std::unique_ptr<OctreeNode> children[8];
+
+    OctreeNode(const dvec3& center, double size)
+        : center(center), size(size), centerOfMass(0.0, 0.0, 0.0), totalMass(0.0) {}
+
+    bool isLeaf() const {
+        return children[0] == nullptr;
+    }
+
+    int getOctant(const dvec3& position) const {
+        int octant = 0;
+        if (position.x >= center.x) octant |= 4;
+        if (position.y >= center.y) octant |= 2;
+        if (position.z >= center.z) octant |= 1;
+        return octant;
+    }
+
+    void insert(CelestialBody* body) {
+        if (isLeaf() && bodies.empty()) {
+            bodies.push_back(body);
+            centerOfMass = body->position;
+            totalMass = body->mass;
+        } else {
+            if (isLeaf() && bodies.size() == 1) {
+                CelestialBody* existingBody = bodies[0];
+                bodies.clear();
+                subdivide();
+                insertToChild(existingBody);
+            }
+            insertToChild(body);
+
+            // Update center of mass and total mass
+            dvec3 weightedPos = centerOfMass * totalMass + body->position * body->mass;
+            totalMass += body->mass;
+            centerOfMass = weightedPos / totalMass;
+        }
+    }
+
+private:
+    void subdivide() {
+        double childSize = size / 2.0;
+        for (int i = 0; i < 8; ++i) {
+            dvec3 childCenter = center;
+            childCenter.x += ((i & 4) ? childSize : -childSize) / 2.0;
+            childCenter.y += ((i & 2) ? childSize : -childSize) / 2.0;
+            childCenter.z += ((i & 1) ? childSize : -childSize) / 2.0;
+            children[i] = std::make_unique<OctreeNode>(childCenter, childSize);
+        }
+    }
+
+    void insertToChild(CelestialBody* body) {
+        int octant = getOctant(body->position);
+        children[octant]->insert(body);
+    }
+};
+
+class Octree {
+public:
+    std::unique_ptr<OctreeNode> root;
+
+    void build(const std::vector<CelestialBody>& bodies) {
+        if (bodies.empty()) return;
+
+        // Find bounding box
+        dvec3 min = bodies[0].position, max = bodies[0].position;
+        for (const auto& body : bodies) {
+            min = glm::min(min, body.position);
+            max = glm::max(max, body.position);
+        }
+
+        dvec3 center = (min + max) * 0.5;
+        double size = glm::length(max - min) * 0.5;
+
+        root = std::make_unique<OctreeNode>(center, size);
+
+        for (const auto& body : bodies) {
+            root->insert(const_cast<CelestialBody*>(&body));
+        }
+    }
+};
+
+void calculateForce(CelestialBody* body, const OctreeNode* node) {
+    if (node->isLeaf() && node->bodies.empty()) {
+        return;
+    }
+
+    double d = glm::length(node->centerOfMass - body->position);
+    if (d < 1) return;  // Prevent division by zero
+
+    if (node->isLeaf() || (node->size / d < theta)) {
+        dvec3 direction = glm::normalize(node->centerOfMass - body->position);
+        double forceMagnitude = G * body->mass * node->totalMass / (d * d);
+        body->force += direction * forceMagnitude;
+    } else {
+        for (int i = 0; i < 8; ++i) {
+            if (node->children[i]) {
+                calculateForce(body, node->children[i].get());
+            }
+        }
+    }
+}
+
+void updateForces(std::vector<CelestialBody>& bodies, const Octree& octree) {
+    for (auto& body : bodies) {
+        calculateForce(&body, octree.root.get());
+    }
+}
 
 int main() {
 
@@ -168,21 +302,23 @@ int main() {
 
     std::vector<CelestialBody> celestialBodies;
 
-    // Create a star
-    celestialBodies.emplace_back(glm::vec3(0.0f), glm::vec3(0.0f), 2.0f, glm::vec3(1.0f, 0.9f, 0.2f));
+    // Star
+    celestialBodies.emplace_back(dvec3(0.0), dvec3(0.0), 2.0, 1.989e30, glm::vec3(1.0f, 0.9f, 0.2f));
 
-    // Create planets
+    // Planets
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(-20.0, 20.0);
-    std::uniform_real_distribution<> colorDis(0.0, 1.0);
+    std::uniform_real_distribution<double> dis(-5e7, 5e7);  // Larger scale
+    std::uniform_real_distribution<double> velDis(-1e4, 1e4);  // Reasonable velocities
+    std::uniform_real_distribution<> colorDis(0.3, 1.0);
 
-    for (int i = 0; i < 8; ++i) {
-        glm::vec3 position(dis(gen), dis(gen), dis(gen));
-        glm::vec3 velocity(dis(gen) * 0.1f, dis(gen) * 0.1f, dis(gen) * 0.1f);
-        float radius = 0.3f + static_cast<float>(i) * 0.1f;
+    for (int i = 0; i < 100; ++i) {
+        dvec3 position(dis(gen), dis(gen), dis(gen));
+        dvec3 velocity(velDis(gen), velDis(gen), velDis(gen));
+        double radius = 1e8 + static_cast<double>(i % 10) * 1e7;  // Reasonable planet sizes
+        double mass = 5.97e24 * (radius / 1e8);  // Scale mass with radius
         glm::vec3 color(colorDis(gen), colorDis(gen), colorDis(gen));
-        celestialBodies.emplace_back(position, velocity, radius, color);
+        celestialBodies.emplace_back(position, velocity, radius, mass, color);
     }
 
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 30.0f));
@@ -193,6 +329,8 @@ int main() {
     shader.setVec3("lightPos", lightPos);
 
     float lastFrame = 0.0f;
+    Octree octree;
+
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -204,14 +342,20 @@ int main() {
         glClearColor(0.0f, 0.0f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // Update physics
+        octree.build(celestialBodies);
+        updateForces(celestialBodies, octree);
+        for (auto& body : celestialBodies) {
+            body.update(deltaTime);
+        }
+
         camera.Inputs(window);
-        camera.Matrix(90.0f, 0.1f, 1000.0f, shader, "camMatrix");
+        camera.Matrix(70.0f, 0.1f, 10000.0f, shader, "camMatrix");
 
         // Update view position for specular lighting
         shader.setVec3("viewPos", camera.Position);
 
         for (auto& body : celestialBodies) {
-            body.position += body.velocity * deltaTime;
             body.draw(shader);
         }
 
