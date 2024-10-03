@@ -21,18 +21,15 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 6.67430e-11f;  // The Gravitational constant :)
+const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
 const float theta = 0.5f;  // Barnes-Hut opening angle
 
-int initialZoom = 10; // larger values mean more steps
-int zoomStatus = initialZoom;
-float initialFov = 80.0f;
-float fov = initialFov;
-float initialFar = 100.0f;
-float far = initialFar;
+constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
+constexpr float initialFov = 80.0f;     float fov = initialFov;
+constexpr float initialFar = 1000.0f;   float far = initialFar;
 
 #define PI 3.14159265
-using dvec3 = glm::dvec3; // double precision for very large or small values
+using dvec3 = glm::dvec3; // double precision vectors
 
 void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int segments) {
     vertices.clear();
@@ -86,7 +83,7 @@ public:
         : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
         createSphereMesh(vertices, indices, static_cast<float>(radius), 20);
 
-        std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
+        // std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
 
         if (vertices.empty() || indices.empty()) {
             throw std::runtime_error("Failed to create sphere mesh");
@@ -167,6 +164,8 @@ public:
                       << ", Force: " << glm::to_string(force)
                       << ", Mass: " << mass << std::endl;
         }
+
+        std::cout << velocity.x << ", " << velocity.y << ", " << velocity.z << std::endl;
     }
 };
 
@@ -334,36 +333,31 @@ int main() {
     std::vector<CelestialBody> celestialBodies;
 
     // Star
-    celestialBodies.emplace_back(dvec3(0.0), dvec3(0.0), 2.0, 1.989e30, glm::vec3(1.0f, 0.9f, 0.2f));
 
-    // Planets
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> dis(-5e7, 5e7);  // Larger scale
-    std::uniform_real_distribution<double> velDis(-1e4, 1e4);  // Reasonable velocities
-    std::uniform_real_distribution<> colorDis(0.3, 1.0);
+    // position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr)
+    celestialBodies.emplace_back(dvec3(0.0), dvec3(0.0), 2.0, 1.989e10, glm::vec3(1.0f, 0.9f, 0.2f));
 
-    for (int i = 0; i < 100; ++i) {
-        dvec3 position(dis(gen), dis(gen), dis(gen));
-        dvec3 velocity(velDis(gen), velDis(gen), velDis(gen));
-        double radius = 1e8 + static_cast<double>(i % 10) * 1e7;  // Reasonable planet sizes
-        double mass = 5.97e24 * (radius / 1e8);  // Scale mass with radius
-        glm::vec3 color = getColorForBody(mass, radius);
-        celestialBodies.emplace_back(position, velocity, radius, mass, color);
-    }
+    celestialBodies.emplace_back(dvec3(10.0), dvec3(0.0), 2.0, 1.989e10, glm::vec3(1.0f, 0.9f, 0.2f));
 
     // manages camera and zoom
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 30.0f));
     glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
-        if (zoomStatus > 1) { zoomStatus += yoffset; }
-        std::cout << "zoomStatus = " << zoomStatus << std::endl;
+        if (yoffset == -1) { // zoom out
+            if (zoomStatus > 2) {
+                zoomStatus = zoomStatus / (2 * -yoffset);
+            } else {
+                std::cout << "can't zoom out any further" << std::endl;
+            }
+        } else { // zoom in
+            if (zoomStatus <= 2048) {
+                zoomStatus = zoomStatus * (2 * yoffset);
+            } else {
+                std::cout << "can't zoom in any further" << std::endl;
+            }
+        }
         fov = initialFov * initialZoom / zoomStatus;
-        far = initialFar / initialZoom * pow(zoomStatus, 1.5);
-        std::cout << "fov: " << fov << std::endl;
-        std::cout << "far: " << far << std::endl;
+        far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value, I need to do the math and figure out what value to use
     });
-
-
 
     // Set up lighting
     glm::vec3 lightPos(10.0f, 10.0f, 10.0f);
@@ -373,6 +367,7 @@ int main() {
     float lastFrame = 0.0f;
     Octree octree;
 
+    // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
 
         // FRAME COUNTING
@@ -385,7 +380,9 @@ int main() {
 
         // Update physics
         octree.build(celestialBodies);
-        updateForces(celestialBodies, octree);
+        for (auto& body : celestialBodies) {
+            calculateForce(&body, octree.root.get());
+        }
         for (auto& body : celestialBodies) {
             body.update(deltaTime);
         }
