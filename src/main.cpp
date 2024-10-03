@@ -24,6 +24,13 @@ const unsigned int SCR_HEIGHT = 1080;
 const float G = 6.67430e-11f;  // The Gravitational constant :)
 const float theta = 0.5f;  // Barnes-Hut opening angle
 
+int initialZoom = 10; // larger values mean more steps
+int zoomStatus = initialZoom;
+float initialFov = 80.0f;
+float fov = initialFov;
+float initialFar = 100.0f;
+float far = initialFar;
+
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision for very large or small values
 
@@ -278,6 +285,30 @@ void updateForces(std::vector<CelestialBody>& bodies, const Octree& octree) {
     }
 }
 
+glm::vec3 getColorForBody(double mass, double radius) {
+    // Example color scheme:
+    // - Blue for small, low mass bodies (like planets)
+    // - White-yellow for medium bodies
+    // - Red for large, high mass bodies (like red giants)
+
+    double massScale = std::log10(mass) / 30.0;  // Assuming masses range from about 1e24 to 1e30
+    double radiusScale = std::log10(radius) / 10.0;  // Adjust based on your radius range
+
+    glm::vec3 color;
+    if (massScale < 0.3) {
+        color = glm::mix(glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, 1.0, 1.0), massScale / 0.3);
+    } else if (massScale < 0.7) {
+        color = glm::mix(glm::vec3(0.0, 1.0, 1.0), glm::vec3(1.0, 1.0, 0.0), (massScale - 0.3) / 0.4);
+    } else {
+        color = glm::mix(glm::vec3(1.0, 1.0, 0.0), glm::vec3(1.0, 0.0, 0.0), (massScale - 0.7) / 0.3);
+    }
+
+    // Adjust brightness based on radius
+    color = glm::mix(color, glm::vec3(1.0), radiusScale);
+
+    return color;
+}
+
 int main() {
 
     // GRAPHICS INITIALIZATION STUFF
@@ -317,11 +348,22 @@ int main() {
         dvec3 velocity(velDis(gen), velDis(gen), velDis(gen));
         double radius = 1e8 + static_cast<double>(i % 10) * 1e7;  // Reasonable planet sizes
         double mass = 5.97e24 * (radius / 1e8);  // Scale mass with radius
-        glm::vec3 color(colorDis(gen), colorDis(gen), colorDis(gen));
+        glm::vec3 color = getColorForBody(mass, radius);
         celestialBodies.emplace_back(position, velocity, radius, mass, color);
     }
 
+    // manages camera and zoom
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 30.0f));
+    glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
+        if (zoomStatus > 1) { zoomStatus += yoffset; }
+        std::cout << "zoomStatus = " << zoomStatus << std::endl;
+        fov = initialFov * initialZoom / zoomStatus;
+        far = initialFar / initialZoom * pow(zoomStatus, 1.5);
+        std::cout << "fov: " << fov << std::endl;
+        std::cout << "far: " << far << std::endl;
+    });
+
+
 
     // Set up lighting
     glm::vec3 lightPos(10.0f, 10.0f, 10.0f);
@@ -330,7 +372,6 @@ int main() {
 
     float lastFrame = 0.0f;
     Octree octree;
-
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -350,7 +391,7 @@ int main() {
         }
 
         camera.Inputs(window);
-        camera.Matrix(70.0f, 0.1f, 10000.0f, shader, "camMatrix");
+        camera.Matrix(fov, 0.1f, far, shader, "camMatrix");
 
         // Update view position for specular lighting
         shader.setVec3("viewPos", camera.Position);

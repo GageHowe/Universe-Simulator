@@ -1,4 +1,7 @@
 #include"Camera.h"
+#include <glm/glm.hpp>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
 Camera::Camera(int width, int height, glm::vec3 position)
 {
@@ -82,7 +85,6 @@ void Camera::Inputs(GLFWwindow* window)
 	{
 		speed = 0.1f;
 	}
-
 
 	// Handles mouse inputs
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
