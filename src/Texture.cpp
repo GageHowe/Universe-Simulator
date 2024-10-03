@@ -11,7 +11,7 @@ Texture::Texture(const char* image, GLenum texType, GLenum slot, GLenum format, 
 	stbi_set_flip_vertically_on_load(true);
 	// Reads the image from a file and stores it in bytes
 	try {
-		unsigned char* bytes = stbi_load(image, &widthImg, &heightImg, &numColCh, 0);
+		unsigned char* bytes = stbi_load(image, &widthImg, &heightImg, &numColCh, STBI_rgb_alpha);
 	} catch (std::exception e) {
 		std::cout << "Error: " << e.what() << std::endl;
 	}

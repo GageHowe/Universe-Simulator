@@ -1,9 +1,8 @@
-// Spaceship.h
 #pragma once
-#include "SpaceEntity.h"
+#include "SpaceObject.h"
 #include <GLFW/glfw3.h>
 
-class Spaceship : public SpaceEntity {
+class Spaceship : public SpaceObject {
 public:
     Spaceship(double mass, const glm::vec3& position, const glm::vec3& velocity);
 
@@ -12,6 +11,5 @@ public:
     void handleInput(GLFWwindow* window, float deltaTime);
 
 private:
-    float acceleration;
     glm::vec3 orientation;
 };
