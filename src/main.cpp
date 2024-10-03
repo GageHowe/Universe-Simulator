@@ -15,13 +15,15 @@
 #include "EBO.h"
 #include "Camera.h"
 
-const unsigned int SCR_WIDTH = 1280;
-const unsigned int SCR_HEIGHT = 720;
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
 
 #define PI 3.14159265
 
-// Function to create a sphere mesh
 void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int segments) {
+    vertices.clear();
+    indices.clear();
+
     for (int y = 0; y <= segments; y++) {
         for (int x = 0; x <= segments; x++) {
             float xSegment = (float)x / (float)segments;
@@ -41,12 +43,12 @@ void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& i
 
     for (int y = 0; y < segments; y++) {
         for (int x = 0; x < segments; x++) {
-            indices.push_back((y + 1) * (segments + 1) + x);
             indices.push_back(y * (segments + 1) + x);
+            indices.push_back((y + 1) * (segments + 1) + x);
             indices.push_back(y * (segments + 1) + x + 1);
 
-            indices.push_back((y + 1) * (segments + 1) + x);
             indices.push_back(y * (segments + 1) + x + 1);
+            indices.push_back((y + 1) * (segments + 1) + x);
             indices.push_back((y + 1) * (segments + 1) + x + 1);
         }
     }
@@ -67,6 +69,13 @@ public:
     CelestialBody(const glm::vec3& pos, const glm::vec3& vel, float r, const glm::vec3& col)
         : position(pos), velocity(vel), radius(r), color(col), vbo(nullptr), ebo(nullptr) {
         createSphereMesh(vertices, indices, radius, 20);
+
+        std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
+
+        if (vertices.empty() || indices.empty()) {
+            throw std::runtime_error("Failed to create sphere mesh");
+        }
+
         vbo = new VBO(vertices.data(), vertices.size() * sizeof(float));
         ebo = new EBO(indices.data(), indices.size() * sizeof(unsigned int));
         vao.Bind();
@@ -76,6 +85,7 @@ public:
         vbo->Unbind();
         ebo->Unbind();
     }
+
 
     ~CelestialBody() {
         delete vbo;
@@ -120,19 +130,27 @@ public:
         model = glm::translate(model, position);
         shader.setMat4("model", model);
         shader.setVec3("color", color);
+
+        std::cout << "Drawing celestial body at position: ("
+                  << position.x << ", " << position.y << ", " << position.z
+                  << ") with color: ("
+                  << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
+
         vao.Bind();
+        ebo->Bind();
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        ebo->Unbind();
         vao.Unbind();
     }
 };
 
 int main() {
-    // Initialize GLFW
+
+    // GRAPHICS INITIALIZATION STUFF
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Space Simulation", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -140,12 +158,10 @@ int main() {
         return -1;
     }
     glfwMakeContextCurrent(window);
-
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
-
     glEnable(GL_DEPTH_TEST);
 
     Shader shader("assets/default.vert", "assets/default.frag");
@@ -171,9 +187,16 @@ int main() {
 
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 30.0f));
 
+    // Set up lighting
+    glm::vec3 lightPos(10.0f, 10.0f, 10.0f);
+    shader.Activate();
+    shader.setVec3("lightPos", lightPos);
+
     float lastFrame = 0.0f;
 
     while (!glfwWindowShouldClose(window)) {
+
+        // FRAME COUNTING
         float currentFrame = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
@@ -182,7 +205,10 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         camera.Inputs(window);
-        camera.Matrix(45.0f, 0.1f, 100.0f, shader, "camMatrix");
+        camera.Matrix(90.0f, 0.1f, 1000.0f, shader, "camMatrix");
+
+        // Update view position for specular lighting
+        shader.setVec3("viewPos", camera.Position);
 
         for (auto& body : celestialBodies) {
             body.position += body.velocity * deltaTime;

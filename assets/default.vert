@@ -1,15 +1,18 @@
 #version 330 core
-
 layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aColor;
 
-uniform mat4 camMatrix;
+out vec3 ourColor;
+out vec3 Normal;
+out vec3 FragPos;
+
 uniform mat4 model;
-uniform vec3 uniformColor;  // New uniform for color
-
-out vec3 color;
+uniform mat4 camMatrix;
 
 void main()
 {
-	gl_Position = camMatrix * model * vec4(aPos, 1.0);
-	color = uniformColor;  // Use the uniform color
+	FragPos = vec3(model * vec4(aPos, 1.0));
+	gl_Position = camMatrix * vec4(FragPos, 1.0);
+	ourColor = aColor;
+	Normal = normalize(mat3(transpose(inverse(model))) * aPos);
 }
