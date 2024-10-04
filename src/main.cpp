@@ -348,6 +348,10 @@ int main() {
     glm::dvec3 center(0.0, 0.0, 0.0);
     glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
+    // for random sizes
+    std::uniform_real_distribution unif(1e8,3e10);
+    std::default_random_engine re;
+
     for (int i = 0; i < 1000; ++i) {
         glm::dvec3 position = glm::sphericalRand(100.0);
         glm::dvec3 toCenter = center - position;
@@ -356,11 +360,12 @@ int main() {
         // Normalize and scale the velocity
         velocity = glm::normalize(velocity) * glm::length(toCenter) * velocityScale;
 
+        double mass = unif(re);
         celestialBodies.emplace_back(
             position,
             velocity,
-            3.0,
-            2.0e10,
+            std::cbrt(mass * 0.000000002),
+            mass,
             glm::vec3(1.0f, 0.9f, 0.2f)
         );
     }
