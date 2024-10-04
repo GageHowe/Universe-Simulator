@@ -12,11 +12,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "glm/gtx/string_cast.hpp"
-
 #include <glm/gtc/random.hpp>
 
+#include "imgui.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx11.h"
 
-// Include your provided implementations
 #include "shaderClass.h"
 #include "VAO.h"
 #include "VBO.h"
@@ -282,12 +283,6 @@ void calculateForce(CelestialBody* body, const OctreeNode* node) {
     }
 }
 
-void updateForces(std::vector<CelestialBody>& bodies, const Octree& octree) {
-    for (auto& body : bodies) {
-        calculateForce(&body, octree.root.get());
-    }
-}
-
 glm::vec3 getColorForBody(double mass, double radius) {
     // Example color scheme:
     // - Blue for small, low mass bodies (like planets)
@@ -313,6 +308,13 @@ glm::vec3 getColorForBody(double mass, double radius) {
 }
 
 int main() {
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
 
     // GRAPHICS INITIALIZATION STUFF
     glfwInit();
