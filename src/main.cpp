@@ -26,12 +26,13 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 0.0000002; //6.67430e-11f;  // The Gravitational constant :)
+const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
 const float theta = 0.5f;  // Barnes-Hut opening angle
 
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
+constexpr float initialNear = 1.0f;   float near = initialNear;
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -335,7 +336,7 @@ int main() {
     // GENERATE BODIES
     std::vector<CelestialBody> celestialBodies;
 
-    double velocityScale = 1.0;
+    double velocityScale = 0.7;
     glm::dvec3 center(0.0, 0.0, 0.0);
     glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
@@ -373,6 +374,7 @@ int main() {
             }
         }
         fov = initialFov * initialZoom / zoomStatus;
+        near = initialNear * 8 * zoomStatus;
         far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
 
         std::cout << "Far: " << far << " Fov: " << fov << std::endl;
@@ -407,7 +409,7 @@ int main() {
         }
 
         camera.Inputs(window);
-        camera.Matrix(fov, 0.1f, far, shader, "camMatrix");
+        camera.Matrix(fov, near, far, shader, "camMatrix");
 
         // Update view position for specular lighting
         shader.setVec3("viewPos", camera.Position);
