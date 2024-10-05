@@ -1,3 +1,5 @@
+// https://www.cs.cmu.edu/afs/cs.cmu.edu/project/scandal/public/papers/dimacs-nbody.pdf
+
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -27,7 +29,10 @@ const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
 const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
-const float theta = 0.5f;  // Barnes-Hut opening angle
+const float theta = 1.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+                            // at 0, there will be no optimization and every particle interacts with every other particle
+                            // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
+                            // this comes at the cost of accuracy
 
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
@@ -385,7 +390,9 @@ int main() {
             } else {
                 std::cout << "can't zoom in any further" << std::endl;
             }
-        }
+        // } else {
+        //     std::cout << "oops, trackpads aren't supported yet :(";
+        // }
         fov = initialFov * initialZoom / zoomStatus;
         near = initialNear * 8 * zoomStatus;
         far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
