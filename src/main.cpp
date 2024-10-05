@@ -1,10 +1,9 @@
-// IMPORTANT: this app randomly exits with a 0xC00000FD stack overflow. I'm working on it :)
-
 #include <iostream>
 #include <vector>
 #include <cmath>
 #include <random>
 #include <memory>
+#include <chrono>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -242,6 +241,7 @@ public:
     std::unique_ptr<OctreeNode> root;
 
     void build(const std::vector<CelestialBody>& bodies) {
+
         if (bodies.empty()) return;
 
         // Find bounding box
@@ -412,27 +412,40 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Update physics
+        // BUILD OCTREE
+        auto start = std::chrono::high_resolution_clock::now();
         octree.build(celestialBodies);
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+
+        // CALCULATE FORCES FOR ALL BODIES
+        start = std::chrono::high_resolution_clock::now();
         for (auto& body : celestialBodies) {
             calculateForce(&body, octree.root.get());
         }
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+
+        // UPDATE VELOCITY AND POSITION FOR ALL BODIES
+        start = std::chrono::high_resolution_clock::now();
         for (auto& body : celestialBodies) {
             body.update(deltaTime);
         }
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
+        // DO GRAPHICS STUFF
+        start = std::chrono::high_resolution_clock::now();
         camera.Inputs(window);
         camera.Matrix(fov, near, far, shader, "camMatrix");
-
-        // Update view position for specular lighting
-        shader.setVec3("viewPos", camera.Position);
-
+        shader.setVec3("viewPos", camera.Position); // Update view position for specular lighting
         for (auto& body : celestialBodies) {
             body.draw(shader);
         }
-
         glfwSwapBuffers(window);
         glfwPollEvents();
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Graphics/OpeGL stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
     }
 
     glfwTerminate();
