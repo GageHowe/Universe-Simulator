@@ -6,6 +6,8 @@
 #include <random>
 #include <memory>
 #include <chrono>
+#include <thread>
+#include <omp.h>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -29,7 +31,7 @@ const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
 const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
-const float theta = 1.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+const float theta = 0.1f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
                             // at 0, there will be no optimization and every particle interacts with every other particle
                             // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
                             // this comes at the cost of accuracy
@@ -288,6 +290,41 @@ void calculateForce(CelestialBody* body, const OctreeNode* node) {
     }
 }
 
+void calculateForcesNormal(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+    for (auto & body : bodies) {
+        calculateForce(&body, root);
+    }
+}
+
+void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+    const size_t numThreads = std::thread::hardware_concurrency();
+    std::vector<std::thread> threads;
+
+    auto worker = [&](size_t start, size_t end) {
+        for (size_t i = start; i < end; ++i) {
+            calculateForce(&bodies[i], root);
+        }
+    };
+
+    size_t chunkSize = bodies.size() / numThreads;
+    for (size_t i = 0; i < numThreads - 1; ++i) {
+        threads.emplace_back(worker, i * chunkSize, (i + 1) * chunkSize);
+    }
+    threads.emplace_back(worker, (numThreads - 1) * chunkSize, bodies.size());
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+}
+
+// holy barnes-hut this is fast
+void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+#pragma omp parallel for
+    for (auto & body : bodies) {
+        calculateForce(&body, root);
+    }
+}
+
 glm::vec3 getColorForBody(double mass, double radius) {
     // Example color scheme:
     // - Blue for small, low mass bodies (like planets)
@@ -384,15 +421,14 @@ int main() {
             } else {
                 std::cout << "can't zoom out any further" << std::endl;
             }
-        } else { // zoom in
-            if (zoomStatus <= 2048) {
-                zoomStatus = zoomStatus * (2 * yoffset);
-            } else {
-                std::cout << "can't zoom in any further" << std::endl;
-            }
-        // } else {
-        //     std::cout << "oops, trackpads aren't supported yet :(";
-        // }
+        } else {
+            // zoom in
+       if (zoomStatus <= 2048) {
+           zoomStatus = zoomStatus * (2 * yoffset);
+       } else {
+           std::cout << "can't zoom in any further" << std::endl;
+       }
+   }
         fov = initialFov * initialZoom / zoomStatus;
         near = initialNear * 8 * zoomStatus;
         far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
@@ -427,9 +463,11 @@ int main() {
 
         // CALCULATE FORCES FOR ALL BODIES
         start = std::chrono::high_resolution_clock::now();
-        for (auto& body : celestialBodies) {
-            calculateForce(&body, octree.root.get());
-        }
+        // for (auto& body : celestialBodies) {
+        //     calculateForce(&body, octree.root.get());
+        // }
+
+        calculateForcesOmp(celestialBodies, octree.root.get());
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
