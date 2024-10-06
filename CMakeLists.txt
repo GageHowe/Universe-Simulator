@@ -9,18 +9,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Limit configurations to those Jolt supports
-set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Distribution")
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif()
 
-# OpenAL build options
-set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
-set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(ALSOFT_TESTS OFF CACHE BOOL "" FORCE)
 
-# When turning this option on, the Jolt will be compiled using doubles for positions. This allows for much bigger worlds.
-set(DOUBLE_PRECISION ON)
-
-include(FetchContent) # this makes managing dependencies simpler by automatically downloading them
+include(FetchContent)
 FetchContent_Declare(
         glfw
         GIT_REPOSITORY https://github.com/glfw/glfw.git
@@ -36,54 +33,60 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/g-truc/glm.git
         GIT_TAG 0.9.9.8
 )
-FetchContent_Declare(
-        JoltPhysics
-        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-        GIT_TAG v4.0.2
-        SOURCE_SUBDIR Build
-)
-FetchContent_Declare(
-        openal
-        GIT_REPOSITORY https://github.com/kcat/openal-soft.git
-        GIT_TAG 1.23.1
-)
-#FetchContent_Declare(assimp
-#        GIT_REPOSITORY https://github.com/assimp/assimp.git
-#        GIT_TAG master
-#)
-FetchContent_MakeAvailable(glfw glew glm JoltPhysics openal) # assimp
-#
-#set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-#set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
-#set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(glfw glew glm)
 
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.c")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# folders include as dependencies
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/include
-        ${JoltPhysics_SOURCE_DIR}
         ${glm_SOURCE_DIR}
         ${glew_SOURCE_DIR}/include
-        ${openal_SOURCE_DIR}/include
-        #${assimp_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/libraries/include
 )
 
-# linking stage
+FetchContent_Populate(imgui
+        URL https://github.com/ocornut/imgui/archive/docking.zip
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui
+)
+
+set(OpenGL_GL_PREFERENCE "LEGACY")
+find_package(OpenGL 3 REQUIRED)
+
+add_library(imgui_glfw STATIC
+        imgui/imgui.cpp
+        imgui/imgui_draw.cpp
+        imgui/imgui_demo.cpp
+        imgui/imgui_tables.cpp
+        imgui/imgui_widgets.cpp
+        imgui/backends/imgui_impl_glfw.cpp
+        imgui/backends/imgui_impl_opengl2.cpp
+)
+
+target_link_libraries(imgui_glfw PUBLIC glfw ${OPENGL_LIBRARIES})
+
+# Add OpenMP after defining the target
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_options(${PROJECT_NAME} PRIVATE ${OpenMP_CXX_FLAGS})
+endif()
+
+target_include_directories(imgui_glfw
+        PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/imgui
+        ${CMAKE_CURRENT_LIST_DIR}/imgui/backends
+)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
-        Jolt
         glfw
         glm
         libglew_static
-        OpenAL::OpenAL
-        #assimp
+        imgui_glfw
+        ${OPENGL_LIBRARIES}
 )
 
-# Settings for Windows
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX-)
     target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -95,7 +98,6 @@ else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE GLEW_STATIC)
 endif()
 
-# Copy assets to build directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/assets"

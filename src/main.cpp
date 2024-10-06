@@ -1,291 +1,498 @@
+// https://www.cs.cmu.edu/afs/cs.cmu.edu/project/scandal/public/papers/dimacs-nbody.pdf
+
 #include <iostream>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <memory>
+#include <chrono>
+#include <thread>
+#include <omp.h>
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include<glm/common.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/quaternion.hpp>
-#include <thread>
-#include <chrono>
-#include <atomic>
-#include <mutex>
-#include <filesystem>
+#include "glm/gtx/string_cast.hpp"
+#include <glm/gtc/random.hpp>
 
-#include "physics.hpp"
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 #include "shaderClass.h"
 #include "VAO.h"
 #include "VBO.h"
 #include "EBO.h"
-#include "Texture.h"
 #include "Camera.h"
-// #include "Octree.h" // body is ambiguous
 
-std::atomic<bool> running(true);
-GLFWwindow* window;
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
 
-const unsigned int width = 1280;
-const unsigned int height = 720;
+const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
+const float theta = 0.1f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+                            // at 0, there will be no optimization and every particle interacts with every other particle
+                            // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
+                            // this comes at the cost of accuracy
 
-glm::vec3 cameraOffset = glm::vec3(0.0f, 2.0f, -5.0f);
-float cameraLerpFactor = 0.1f; // how quickly the camera follows the cube (0.0 to 1.0)
+constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
+constexpr float initialFov = 80.0f;     float fov = initialFov;
+constexpr float initialFar = 5000.0f;   float far = initialFar;
+constexpr float initialNear = 1.0f;   float near = initialNear;
 
+#define PI 3.14159265
+using dvec3 = glm::dvec3; // double precision vectors
 
-// Vertices coordinates for a cube
-GLfloat vertices[] =
-{ //     COORDINATES     /        COLORS          /   TexCoord  //
-	// Front face
-	-0.5f, -0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 0.0f, // Bottom-left
-	 0.5f, -0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 0.0f, // Bottom-right
-	 0.5f,  0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 1.0f, // Top-right
-	-0.5f,  0.5f,  0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 1.0f, // Top-left
-	// Back face
-	-0.5f, -0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 0.0f, // Bottom-left
-	 0.5f, -0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 0.0f, // Bottom-right
-	 0.5f,  0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   0.0f, 1.0f, // Top-right
-	-0.5f,  0.5f, -0.5f,     0.83f, 0.70f, 0.44f,   1.0f, 1.0f  // Top-left
+void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int segments) {
+    vertices.clear();
+    indices.clear();
+
+    for (int y = 0; y <= segments; y++) {
+        for (int x = 0; x <= segments; x++) {
+            float xSegment = (float)x / (float)segments;
+            float ySegment = (float)y / (float)segments;
+            float xPos = std::cos(xSegment * 2.0f * PI) * std::sin(ySegment * PI) * radius;
+            float yPos = std::cos(ySegment * PI) * radius;
+            float zPos = std::sin(xSegment * 2.0f * PI) * std::sin(ySegment * PI) * radius;
+
+            vertices.push_back(xPos);
+            vertices.push_back(yPos);
+            vertices.push_back(zPos);
+            vertices.push_back(xSegment); // Use xSegment as r color
+            vertices.push_back(ySegment); // Use ySegment as g color
+            vertices.push_back(1.0f - ySegment); // Inverse of ySegment as b color
+        }
+    }
+
+    for (int y = 0; y < segments; y++) {
+        for (int x = 0; x < segments; x++) {
+            indices.push_back(y * (segments + 1) + x);
+            indices.push_back((y + 1) * (segments + 1) + x);
+            indices.push_back(y * (segments + 1) + x + 1);
+
+            indices.push_back(y * (segments + 1) + x + 1);
+            indices.push_back((y + 1) * (segments + 1) + x);
+            indices.push_back((y + 1) * (segments + 1) + x + 1);
+        }
+    }
+}
+
+class CelestialBody {
+public:
+    dvec3 position;
+    dvec3 velocity;
+    dvec3 force;
+    double radius;
+    double mass;
+    glm::vec3 color;
+    VAO vao;
+    VBO* vbo;
+    EBO* ebo;
+    std::vector<float> vertices;
+    std::vector<unsigned int> indices;
+
+    CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
+        : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
+        createSphereMesh(vertices, indices, static_cast<float>(radius), 20);
+
+        // std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
+
+        if (vertices.empty() || indices.empty()) {
+            throw std::runtime_error("Failed to create sphere mesh");
+        }
+
+        vbo = new VBO(vertices.data(), vertices.size() * sizeof(float));
+        ebo = new EBO(indices.data(), indices.size() * sizeof(unsigned int));
+        vao.Bind();
+        vao.LinkAttrib(*vbo, 0, 3, GL_FLOAT, 6 * sizeof(float), (void*)0);
+        vao.LinkAttrib(*vbo, 1, 3, GL_FLOAT, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+        vao.Unbind();
+        vbo->Unbind();
+        ebo->Unbind();
+    }
+
+    ~CelestialBody() {
+        delete vbo;
+        delete ebo;
+    }
+
+    // Prevent copying
+    CelestialBody(const CelestialBody&) = delete;
+    CelestialBody& operator=(const CelestialBody&) = delete;
+
+    CelestialBody(CelestialBody&& other) noexcept
+        : position(other.position), velocity(other.velocity), force(other.force),
+          radius(other.radius), mass(other.mass), color(other.color),
+          vao(std::move(other.vao)), vbo(other.vbo), ebo(other.ebo),
+          vertices(std::move(other.vertices)), indices(std::move(other.indices)) {
+        other.vbo = nullptr;
+        other.ebo = nullptr;
+    }
+
+    CelestialBody& operator=(CelestialBody&& other) noexcept {
+        if (this != &other) {
+            delete vbo;
+            delete ebo;
+            position = other.position;
+            velocity = other.velocity;
+            force = other.force;
+            radius = other.radius;
+            mass = other.mass;
+            color = other.color;
+            vao = std::move(other.vao);
+            vbo = other.vbo;
+            ebo = other.ebo;
+            vertices = std::move(other.vertices);
+            indices = std::move(other.indices);
+            other.vbo = nullptr;
+            other.ebo = nullptr;
+        }
+        return *this;
+    }
+
+    void draw(Shader& shader) {
+        shader.Activate();
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(position));  // Convert to float for rendering
+        shader.setMat4("model", model);
+        shader.setVec3("color", color);
+
+        vao.Bind();
+        ebo->Bind();
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        ebo->Unbind();
+        vao.Unbind();
+    }
+
+    void update(double dt) { // verlet integration let's goooooooooo
+        // First half of position update
+        position += velocity * (dt / 2.0);
+
+        // Velocity update
+        dvec3 acceleration = force / mass;
+        velocity += acceleration * dt;
+
+        // Second half of position update
+        position += velocity * (dt / 2.0);
+
+        force = dvec3(0.0, 0.0, 0.0);  // Reset force
+    }
 };
 
-// Indices for vertices order
-GLuint indices[] =
-{
-	// Front face
-	0, 1, 2,
-	2, 3, 0,
-	// Right face
-	1, 5, 6,
-	6, 2, 1,
-	// Back face
-	7, 6, 5,
-	5, 4, 7,
-	// Left face
-	4, 0, 3,
-	3, 7, 4,
-	// Bottom face
-	4, 5, 1,
-	1, 0, 4,
-	// Top face
-	3, 2, 6,
-	6, 7, 3
+class OctreeNode {
+public:
+    dvec3 center;
+    double size;
+    dvec3 centerOfMass;
+    double totalMass;
+    std::vector<CelestialBody*> bodies;
+    std::unique_ptr<OctreeNode> children[8];
+
+    OctreeNode(const dvec3& center, double size)
+        : center(center), size(size), centerOfMass(0.0, 0.0, 0.0), totalMass(0.0) {}
+
+    bool isLeaf() const {
+        return children[0] == nullptr;
+    }
+
+    int getOctant(const dvec3& position) const {
+        int octant = 0;
+        if (position.x >= center.x) octant |= 4;
+        if (position.y >= center.y) octant |= 2;
+        if (position.z >= center.z) octant |= 1;
+        return octant;
+    }
+
+    void insert(CelestialBody* body) {
+        if (isLeaf() && bodies.empty()) {
+            bodies.push_back(body);
+            centerOfMass = body->position;
+            totalMass = body->mass;
+        } else {
+            if (isLeaf() && bodies.size() == 1) {
+                CelestialBody* existingBody = bodies[0];
+                bodies.clear();
+                subdivide();
+                insertToChild(existingBody);
+            }
+            insertToChild(body);
+
+            // Update center of mass and total mass
+            dvec3 weightedPos = centerOfMass * totalMass + body->position * body->mass;
+            totalMass += body->mass;
+            centerOfMass = weightedPos / totalMass;
+        }
+    }
+
+private:
+    void subdivide() {
+        double childSize = size / 2.0;
+        for (int i = 0; i < 8; ++i) {
+            dvec3 childCenter = center;
+            childCenter.x += ((i & 4) ? childSize : -childSize) / 2.0;
+            childCenter.y += ((i & 2) ? childSize : -childSize) / 2.0;
+            childCenter.z += ((i & 1) ? childSize : -childSize) / 2.0;
+            children[i] = std::make_unique<OctreeNode>(childCenter, childSize);
+        }
+    }
+
+    void insertToChild(CelestialBody* body) {
+        int octant = getOctant(body->position);
+        children[octant]->insert(body);
+    }
 };
 
-void checkShaderCompileStatus(GLuint shader) {
-	GLint status;
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-	if (status == GL_FALSE) {
-		GLint logLength;
-		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-		GLchar* buffer = new GLchar[logLength];
-		GLsizei bufferSize;
-		glGetShaderInfoLog(shader, logLength, &bufferSize, buffer);
-		std::cout << "unsuccessful" << std::endl;
-		std::cout << buffer << std::endl;
-		delete[] buffer;
+class Octree {
+public:
+    std::unique_ptr<OctreeNode> root;
 
-		return;
-	}
-	else {
-		std::cout << "successful" << std::endl;
-	}
+    void build(const std::vector<CelestialBody>& bodies) {
+
+        if (bodies.empty()) return;
+
+        // Find bounding box
+        dvec3 min = bodies[0].position, max = bodies[0].position;
+        for (const auto& body : bodies) {
+            min = glm::min(min, body.position);
+            max = glm::max(max, body.position);
+        }
+
+        dvec3 center = (min + max) * 0.5;
+        double size = glm::length(max - min) * 0.5;
+
+        root = std::make_unique<OctreeNode>(center, size);
+
+        for (const auto& body : bodies) {
+            root->insert(const_cast<CelestialBody*>(&body));
+        }
+    }
+};
+
+void calculateForce(CelestialBody* body, const OctreeNode* node) {
+    if (node->isLeaf() && node->bodies.empty()) {
+        return;
+    }
+
+    double d = glm::length(node->centerOfMass - body->position);
+    if (d < 2) return;  // Prevent division by zero by having bodies ignore each other when within x units
+
+    if (node->isLeaf() || (node->size / d < theta)) {
+        dvec3 direction = glm::normalize(node->centerOfMass - body->position);
+        double forceMagnitude = G * body->mass * node->totalMass / (d * d);
+        body->force += direction * forceMagnitude;
+    } else {
+        for (int i = 0; i < 8; ++i) {
+            if (node->children[i]) {
+                calculateForce(body, node->children[i].get());
+            }
+        }
+    }
+}
+
+void calculateForcesNormal(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+    for (auto & body : bodies) {
+        calculateForce(&body, root);
+    }
+}
+
+void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+    const size_t numThreads = std::thread::hardware_concurrency();
+    std::vector<std::thread> threads;
+
+    auto worker = [&](size_t start, size_t end) {
+        for (size_t i = start; i < end; ++i) {
+            calculateForce(&bodies[i], root);
+        }
+    };
+
+    size_t chunkSize = bodies.size() / numThreads;
+    for (size_t i = 0; i < numThreads - 1; ++i) {
+        threads.emplace_back(worker, i * chunkSize, (i + 1) * chunkSize);
+    }
+    threads.emplace_back(worker, (numThreads - 1) * chunkSize, bodies.size());
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+}
+
+// holy barnes-hut this is fast
+void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+#pragma omp parallel for
+    for (auto & body : bodies) {
+        calculateForce(&body, root);
+    }
+}
+
+glm::vec3 getColorForBody(double mass, double radius) {
+    // Example color scheme:
+    // - Blue for small, low mass bodies (like planets)
+    // - White-yellow for medium bodies
+    // - Red for large, high mass bodies (like red giants)
+
+    double massScale = std::log10(mass) / 30.0;  // Assuming masses range from about 1e24 to 1e30
+    double radiusScale = std::log10(radius) / 10.0;  // Adjust based on your radius range
+
+    glm::vec3 color;
+    if (massScale < 0.3) {
+        color = glm::mix(glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, 1.0, 1.0), massScale / 0.3);
+    } else if (massScale < 0.7) {
+        color = glm::mix(glm::vec3(0.0, 1.0, 1.0), glm::vec3(1.0, 1.0, 0.0), (massScale - 0.3) / 0.4);
+    } else {
+        color = glm::mix(glm::vec3(1.0, 1.0, 0.0), glm::vec3(1.0, 0.0, 0.0), (massScale - 0.7) / 0.3);
+    }
+
+    // Adjust brightness based on radius
+    color = glm::mix(color, glm::vec3(1.0), radiusScale);
+
+    return color;
 }
 
 int main() {
-    // Initialize GLFW
-    if (!glfwInit()) {
-        std::cout << "Failed to initialize GLFW" << std::endl;
-        return -1;
-    }
 
+    // OPENGL INITIALIZATION
+    glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    window = glfwCreateWindow(width, height, "JopenGL", nullptr, nullptr);
-    if (window == nullptr) { std::cout << "Failed to create GLFW window" << std::endl; glfwTerminate(); return -1; }
-
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Space Simulation", NULL, NULL);
+    if (window == NULL) {
+        std::cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
     glfwMakeContextCurrent(window);
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cout << "Failed to initialize GLAD" << std::endl;
+        return -1;
+    }
+    glEnable(GL_DEPTH_TEST);
+    Shader shader("assets/default.vert", "assets/default.frag");
 
-    if (!gladLoadGL()) { std::cout << "Failed to initialize GLAD" << std::endl; return -1; }
+    // THIS DOESNT WORK FOR SOME REASON
+    // // IMGUI SETUP
+    // IMGUI_CHECKVERSION();
+    // ImGui::CreateContext();
+    // ImGuiIO& io = ImGui::GetIO();
+    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
+    //
+    // // Setup Platform/Renderer backends
+    // ImGui_ImplGlfw_InitForOpenGL(window, true);          // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
+    // ImGui_ImplOpenGL3_Init();
 
-	Shader shaderProgram("assets/default.vert", "assets/default.frag");
+    // GENERATE BODIES
+    std::vector<CelestialBody> celestialBodies;
 
-	VAO VAO1; VAO1.Bind(); // Generates Vertex Array Object and binds it
-	VBO VBO1(vertices, sizeof(vertices)); // Generates Vertex Buffer Object and links it to vertices
-	EBO EBO1(indices, sizeof(indices)); // Generates Element Buffer Object and links it to indices
+    double velocityScale = 0.7;
+    glm::dvec3 center(0.0, 0.0, 0.0);
+    glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
-	// Links VBO attributes such as coordinates and colors to VAO
-	VAO1.LinkAttrib(VBO1, 0, 3, GL_FLOAT, 8 * sizeof(float), (void*)0);
-	VAO1.LinkAttrib(VBO1, 1, 3, GL_FLOAT, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-	VAO1.LinkAttrib(VBO1, 2, 2, GL_FLOAT, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-	VAO1.Unbind();
-	VBO1.Unbind();
-	EBO1.Unbind();
+    // for random sizes
+    std::uniform_real_distribution unif(1e8,3e10);
+    std::default_random_engine re;
 
+    for (int i = 0; i < 1000; ++i) {
+        glm::dvec3 position = glm::sphericalRand(100.0);
+        glm::dvec3 toCenter = center - position;
+        glm::dvec3 velocity = glm::cross(up, toCenter);
 
+        // Normalize and scale the velocity
+        velocity = glm::normalize(velocity) * glm::length(toCenter) * velocityScale;
 
+        double mass = unif(re);
+        celestialBodies.emplace_back(
+            position,
+            velocity,
+            std::cbrt(mass * 0.000000002),
+            mass,
+            glm::vec3(1.0f, 0.9f, 0.2f)
+        );
+    }
 
-	// Shader for light cube
-	Shader lightShader("assets/light.vert", "assets/light.frag");
-	// Generates Vertex Array Object and binds it
-	VAO lightVAO;
-	lightVAO.Bind();
-	// Generates Vertex Buffer Object and links it to vertices
-	VBO lightVBO(vertices, sizeof(vertices));
-	// Generates Element Buffer Object and links it to indices
-	EBO lightEBO(indices, sizeof(indices));
-	// Links VBO attributes such as coordinates and colors to VAO
-	lightVAO.LinkAttrib(lightVBO, 0, 3, GL_FLOAT, 3 * sizeof(float), (void*)0);
-	// Unbind all to prevent accidentally modifying them
-	lightVAO.Unbind();
-	lightVBO.Unbind();
-	lightEBO.Unbind();
-	glm::vec4 lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	glm::vec3 lightPos = glm::vec3(0.5f, 0.5f, 0.5f);
-	glm::mat4 lightModel = glm::mat4(1.0f);
-	lightModel = glm::translate(lightModel, lightPos);
+    // manages camera and zoom
+    Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 150.0f));
+    glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
+        if (yoffset <= -1) { // zoom out
+            if (zoomStatus > 2) {
+                zoomStatus = zoomStatus / (2 * -yoffset);
+            } else {
+                std::cout << "can't zoom out any further" << std::endl;
+            }
+        } else {
+            // zoom in
+       if (zoomStatus <= 2048) {
+           zoomStatus = zoomStatus * (2 * yoffset);
+       } else {
+           std::cout << "can't zoom in any further" << std::endl;
+       }
+   }
+        fov = initialFov * initialZoom / zoomStatus;
+        near = initialNear * 8 * zoomStatus;
+        far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
 
+        std::cout << "Far: " << far << " Fov: " << fov << std::endl;
+    });
 
-	// Gets ID of uniform called "scale"
-	GLuint uniID = glGetUniformLocation(shaderProgram.ID, "scale");
-	//
-	// std::string parentDir = filesystem::current_path().filesystem::path::parent_path().string();
-	// std::string texPath = "\\assets\\";
-	// std::string fullPath = parentDir + texPath + "bricks.jpg";
-	//
-	// if (!std::filesystem::exists(fullPath)) {
-	// 	std::cerr << "Texture file does not exist at: " << fullPath << std::endl;
-	// 	exit(-1);
-	// } else {
-	// 	std::cout << "found at: " << fullPath << std::endl;
-	// }
-	//
-	// std::ifstream file(fullPath, std::ios::binary);
-	// if (!file) {
-	// 	std::cerr << "Cannot open file: " << fullPath << std::endl;
-	// 	exit(-1);
-	// }
-	//
-	// std::vector<char> buffer(std::istreambuf_iterator<char>(file), {});
-	// std::cout << "Successfully read " << buffer.size() << " bytes from file." << std::endl;
-	//
-	// std::cout << "looking for texture at: " << fullPath << std::endl;
-	// Texture brickTex((fullPath).c_str(), GL_TEXTURE_2D, GL_TEXTURE0, GL_RGBA, GL_UNSIGNED_BYTE); // this doesn't error so i don't know if it sees the texture
-	// brickTex.texUnit(shaderProgram, "tex0", 0);
+    // Set up lighting
+    glm::vec3 lightPos(10.0f, 10.0f, 10.0f);
+    shader.Activate();
+    shader.setVec3("lightPos", lightPos);
 
-	double prevTime = glfwGetTime();
+    float lastFrame = 0.0f;
+    Octree octree;
 
-	glEnable(GL_DEPTH_TEST);
+    // MAIN LOOP
+    while (!glfwWindowShouldClose(window)) {
 
-	Camera camera(width, height, glm::vec3(0.0f, 0.0f, 2.0f));
+        // FRAME COUNTING
+        auto bigStart = std::chrono::high_resolution_clock::now();
+        float currentFrame = static_cast<float>(glfwGetTime());
+        float deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
 
-    glViewport(0, 0, width, height);
-    glClearColor(0.07f, 0.13f, 0.17f, 1.0f);
+        glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// global physics stuff
-    RegisterDefaultAllocator();
-	Trace = TraceImpl;
-	JPH_IF_ENABLE_ASSERTS(AssertFailed = AssertFailedImpl;)
-	Factory::sInstance = new Factory();
-	RegisterTypes();
-	TempAllocatorImpl temp_allocator(10 * 1024 * 1024);
-	JobSystemThreadPool job_system(cMaxPhysicsJobs, cMaxPhysicsBarriers, thread::hardware_concurrency() - 1);
-	const uint cMaxBodies = 1024;
-	const uint cNumBodyMutexes = 0;
-	const uint cMaxBodyPairs = 1024;
-	const uint cMaxContactConstraints = 1024;
-	BPLayerInterfaceImpl broad_phase_layer_interface;
-	ObjectVsBroadPhaseLayerFilterImpl object_vs_broadphase_layer_filter;
-	ObjectLayerPairFilterImpl object_vs_object_layer_filter;
-	PhysicsSystem physics_system;
-	physics_system.Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, broad_phase_layer_interface, object_vs_broadphase_layer_filter, object_vs_object_layer_filter);
-	MyBodyActivationListener body_activation_listener;
-	physics_system.SetBodyActivationListener(&body_activation_listener);
-	MyContactListener contact_listener;
-	physics_system.SetContactListener(&contact_listener);
-	BodyInterface &body_interface = physics_system.GetBodyInterface();
-	BoxShapeSettings floor_shape_settings(Vec3(100.0f, 1.0f, 100.0f));
-	floor_shape_settings.SetEmbedded(); // A ref counted object on the stack (base class RefTarget) should be marked as such to prevent it from being freed when its reference count goes to 0.
-	ShapeSettings::ShapeResult floor_shape_result = floor_shape_settings.Create();
-	ShapeRefC floor_shape = floor_shape_result.Get(); // We don't expect an error here, but you can check floor_shape_result for HasError() / GetError()
-	BodyCreationSettings floor_settings(floor_shape, RVec3(0.0_r, -1.0_r, 0.0_r), Quat::sIdentity(), EMotionType::Static, Layers::NON_MOVING);
-	Body *floor = body_interface.CreateBody(floor_settings); // Note that if we run out of bodies this can return nullptr
-	body_interface.AddBody(floor->GetID(), EActivation::DontActivate);
-	BodyCreationSettings sphere_settings(new SphereShape(0.5f), RVec3(0.0_r, 2.0_r, 0.0_r), Quat::sIdentity(), EMotionType::Dynamic, Layers::MOVING);
-	BodyID sphere_id = body_interface.CreateAndAddBody(sphere_settings, EActivation::Activate);
-	body_interface.SetLinearVelocity(sphere_id, Vec3(0.0f, 10.0f, 0.0f));
-	body_interface.SetAngularVelocity(sphere_id, Vec3(1.0f, 1.0f, 1.0f));
-	body_interface.AddTorque(sphere_id, Vec3(40.0f, 0.0f, 0.0f));
-	const float cDeltaTime = 1.0f / 60.0f;
-	physics_system.OptimizeBroadPhase();
+        // BUILD OCTREE
+        auto start = std::chrono::high_resolution_clock::now();
+        octree.build(celestialBodies);
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-	    // START THREADS
+        // CALCULATE RELATIVE FORCES FOR ALL BODIES
+        start = std::chrono::high_resolution_clock::now();
+        calculateForcesOmp(celestialBodies, octree.root.get());
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-		glfwMakeContextCurrent(window);
+        // UPDATE VELOCITY AND POSITION FOR ALL BODIES
+        start = std::chrono::high_resolution_clock::now();
+        for (auto& body : celestialBodies) {
+            body.update(deltaTime);
+        }
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-	    // MAIN LOOP
-	while (!glfwWindowShouldClose(window)) {
-	    std::cout << "Time elapsed: " << glfwGetTime() - prevTime << std::endl;
-	    Quat q = body_interface.GetRotation(sphere_id);
-	    float a[4] = { q.GetX(), q.GetY(), q.GetZ(), q.GetW() };
-	    std::cout << "sphere rotation in quaternion: " << a[0] << " " << a[1] << " " << a[2] << " " << a[3] << std::endl;
-	    glm::quat glmQuat = glm::make_quat(a);
-	    glm::mat4 rotationMatrix = glm::mat4_cast(glmQuat); // Convert GLM quaternion to a rotation matrix
-	    RVec3 physicsPosition = body_interface.GetCenterOfMassPosition(sphere_id);
-	    std::cout << "physics position: " << physicsPosition << std::endl;
-	    glm::vec3 cubePosition = glm::vec3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ());
-	    glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), cubePosition);
-	    glm::mat4 modelMatrix = translationMatrix * rotationMatrix;
+        // DO GRAPHICS STUFF
+        start = std::chrono::high_resolution_clock::now();
+        camera.Inputs(window);
+        camera.Matrix(fov, near, far, shader, "camMatrix");
+        shader.setVec3("viewPos", camera.Position); // Update view position for specular lighting
+        for (auto& body : celestialBodies) {
+            body.draw(shader);
+        }
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "Graphics/OpeGL stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-	    // Update camera position and orientation
-	    glm::vec3 rotatedOffset = glm::vec3(rotationMatrix * glm::vec4(cameraOffset, 1.0f));
-	    glm::vec3 targetCameraPosition = cubePosition + rotatedOffset;
-	    camera.Position = glm::mix(camera.Position, targetCameraPosition, cameraLerpFactor);
+        auto bigFinish = std::chrono::high_resolution_clock::now();
+        std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
+    }
 
-	    // Calculate camera orientation based on cube's rotation
-	    glm::vec3 cameraForward = -glm::normalize(rotatedOffset);
-	    glm::vec3 cameraUp = glm::vec3(rotationMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
-
-	    camera.Orientation = cameraForward;
-	    camera.Up = cameraUp;
-
-	    physics_system.Update(cDeltaTime, 1, &temp_allocator, &job_system);
-
-	    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		lightShader.Activate();
-		glUniformMatrix4fv(glGetUniformLocation(lightShader.ID, "model"), 1, GL_FALSE, glm::value_ptr(lightModel));
-		glUniform4f(glGetUniformLocation(lightShader.ID, "lightColor"), lightColor.x, lightColor.y, lightColor.z, lightColor.w);
-		shaderProgram.Activate();
-		glUniformMatrix4fv(glGetUniformLocation(shaderProgram.ID, "model"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
-		glUniform4f(glGetUniformLocation(shaderProgram.ID, "lightColor"), lightColor.x, lightColor.y, lightColor.z, lightColor.w);
-		glUniform3f(glGetUniformLocation(shaderProgram.ID, "lightPos"), lightPos.x, lightPos.y, lightPos.z);
-
-	    // Use the updated Matrix function
-	    camera.Matrix(80.0f, 0.1f, 500.0f, shaderProgram, "camMatrix");
-
-	    GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
-	    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
-
-		GLuint colorLoc = glGetUniformLocation(shaderProgram.ID, "uniformColor");
-		glUniform3f(colorLoc, 1.0f, 0.0f, 0.0f);  // Red color (change as needed)
-
-	    glUniform1f(uniID, 0.5f);
-	    // brickTex.Bind();
-	    VAO1.Bind();
-	    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
-	    glfwSwapBuffers(window);
-	    glfwPollEvents();
-	}
-
-	// cleanup
-	VAO1.Delete();
-	VBO1.Delete();
-	EBO1.Delete();
-	// brickTex.Delete();
-	shaderProgram.Delete();
-
-    running = false;
-    glfwDestroyWindow(window); glfwTerminate();
+    glfwTerminate();
     return 0;
 }

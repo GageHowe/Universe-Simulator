@@ -74,15 +74,19 @@ void Camera::Inputs(GLFWwindow* window)
 	{
 		Position += speed * -Up;
 	}
+
 	if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
 	{
-		speed = 0.4f;
+		speed += 0.5;
+		std::cout << "Accelerating; speed = " << speed << std::endl;
 	}
 	else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_RELEASE)
 	{
-		speed = 0.1f;
+		if (speed > 5) {
+			speed -= 0.5;
+			std::cout << "decelerating; speed = " << speed << std::endl;
+		}
 	}
-
 
 	// Handles mouse inputs
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
