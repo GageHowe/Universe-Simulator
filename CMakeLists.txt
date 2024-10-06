@@ -62,7 +62,7 @@ add_library(imgui_glfw STATIC
         imgui/imgui_tables.cpp
         imgui/imgui_widgets.cpp
         imgui/backends/imgui_impl_glfw.cpp
-        imgui/backends/imgui_impl_opengl2.cpp
+        imgui/backends/imgui_impl_opengl3.cpp
 )
 
 target_link_libraries(imgui_glfw PUBLIC glfw ${OPENGL_LIBRARIES})
