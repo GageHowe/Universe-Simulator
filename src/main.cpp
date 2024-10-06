@@ -31,7 +31,7 @@ const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
 const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
-const float theta = 0.1f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+const float theta = 0.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
                             // at 0, there will be no optimization and every particle interacts with every other particle
                             // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
                             // this comes at the cost of accuracy
@@ -386,33 +386,32 @@ int main() {
     // GENERATE BODIES
     std::vector<CelestialBody> celestialBodies;
 
-    double velocityScale = 0.7;
+    double velocityScale = 0.4;
     glm::dvec3 center(0.0, 0.0, 0.0);
     glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
-    // for random sizes
-    std::uniform_real_distribution unif(1e8,3e10);
+    // random sizes
+    std::uniform_real_distribution unif(1e7,3e9);
     std::default_random_engine re;
 
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 10000; ++i) {
         glm::dvec3 position = glm::sphericalRand(100.0);
         glm::dvec3 toCenter = center - position;
         glm::dvec3 velocity = glm::cross(up, toCenter);
 
-        // Normalize and scale the velocity
         velocity = glm::normalize(velocity) * glm::length(toCenter) * velocityScale;
 
         double mass = unif(re);
         celestialBodies.emplace_back(
             position,
             velocity,
-            std::cbrt(mass * 0.000000002),
+            std::cbrt(mass * 0.000000002), // radius
             mass,
             glm::vec3(1.0f, 0.9f, 0.2f)
         );
     }
 
-    // manages camera and zoom
+    // manages camera and zoom TODO: fix trackpad scrolling where values aren't necessarily 1 or -1
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 150.0f));
     glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
         if (yoffset <= -1) { // zoom out
