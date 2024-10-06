@@ -448,6 +448,7 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
 
         // FRAME COUNTING
+        auto bigStart = std::chrono::high_resolution_clock::now();
         float currentFrame = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
@@ -461,12 +462,8 @@ int main() {
         auto finish = std::chrono::high_resolution_clock::now();
         std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-        // CALCULATE FORCES FOR ALL BODIES
+        // CALCULATE RELATIVE FORCES FOR ALL BODIES
         start = std::chrono::high_resolution_clock::now();
-        // for (auto& body : celestialBodies) {
-        //     calculateForce(&body, octree.root.get());
-        // }
-
         calculateForcesOmp(celestialBodies, octree.root.get());
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
@@ -491,6 +488,9 @@ int main() {
         glfwPollEvents();
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Graphics/OpeGL stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+
+        auto bigFinish = std::chrono::high_resolution_clock::now();
+        std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
     }
 
     glfwTerminate();
