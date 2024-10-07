@@ -479,6 +479,7 @@ int main() {
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
+        start = std::chrono::high_resolution_clock::now();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -486,14 +487,17 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ImGui windows and widgets
+        // ImGui windows and widgets for this window
         {
             ImGui::Begin("Simulation Stats");
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::Text("%d Objects", numObjects);
-            // Add more ImGui widgets here as needed
             ImGui::End();
         }
+
+        finish = std::chrono::high_resolution_clock::now();
+        std::cout << "ImGUI setup took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+
 
         // DO GRAPHICS STUFF
         start = std::chrono::high_resolution_clock::now();
@@ -510,7 +514,7 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
         finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Graphics/OpeGL stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        std::cout << "Rendering stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
         auto bigFinish = std::chrono::high_resolution_clock::now();
         std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
