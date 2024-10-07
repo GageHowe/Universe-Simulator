@@ -31,7 +31,7 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
+const float G = 0.00000001; //6.67430e-11f;  // The Gravitational constant :)
 const float theta = 0.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
                             // at 0, there will be no optimization and every particle interacts with every other particle
                             // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
@@ -79,6 +79,29 @@ void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& i
     }
 }
 
+enum class BodyType {
+    PLANET,
+    STAR
+};
+
+glm::vec3 getColorForBody(double mass, double radius, BodyType type) {
+    if (type == BodyType::STAR) {
+        // Color stars based on their mass (approximating temperature)
+        double temp = 3000 + (mass / 1.989e30) * 25000; // Rough approximation
+        if (temp < 3500) return glm::vec3(1.0, 0.0, 0.0); // Red
+        else if (temp < 5000) return glm::vec3(1.0, 0.5, 0.0); // Orange
+        else if (temp < 6000) return glm::vec3(1.0, 1.0, 0.0); // Yellow
+        else if (temp < 10000) return glm::vec3(1.0, 1.0, 1.0); // White
+        else return glm::vec3(0.6, 0.6, 1.0); // Blue
+    } else {
+        // Color planets based on their radius
+        if (radius < 2000) return glm::vec3(0.5, 0.5, 0.5); // Small rocky planets
+        else if (radius < 7000) return glm::vec3(0.0, 0.5, 1.0); // Earth-like
+        else if (radius < 15000) return glm::vec3(0.8, 0.4, 0.1); // Gas giants
+        else return glm::vec3(0.8, 0.8, 0.7); // Ice giants
+    }
+}
+
 class CelestialBody {
 public:
     dvec3 position;
@@ -93,15 +116,9 @@ public:
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
 
-    CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
-        : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
+    CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m)
+        : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m) {
         createSphereMesh(vertices, indices, static_cast<float>(radius), 20);
-
-        // std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
-
-        if (vertices.empty() || indices.empty()) {
-            throw std::runtime_error("Failed to create sphere mesh");
-        }
 
         vbo = new VBO(vertices.data(), vertices.size() * sizeof(float));
         ebo = new EBO(indices.data(), indices.size() * sizeof(unsigned int));
@@ -113,12 +130,11 @@ public:
         ebo->Unbind();
     }
 
-    ~CelestialBody() {
+    virtual ~CelestialBody() {
         delete vbo;
         delete ebo;
     }
 
-    // Prevent copying
     CelestialBody(const CelestialBody&) = delete;
     CelestialBody& operator=(const CelestialBody&) = delete;
 
@@ -152,19 +168,7 @@ public:
         return *this;
     }
 
-    void draw(Shader& shader) {
-        shader.Activate();
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(position));  // Convert to float for rendering
-        shader.setMat4("model", model);
-        shader.setVec3("color", color);
-
-        vao.Bind();
-        ebo->Bind();
-        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-        ebo->Unbind();
-        vao.Unbind();
-    }
+    virtual void draw(Shader& shader) = 0;
 
     void update(double dt) { // verlet integration let's goooooooooo
         // First half of position update
@@ -178,6 +182,62 @@ public:
         position += velocity * (dt / 2.0);
 
         force = dvec3(0.0, 0.0, 0.0);  // Reset force
+    }
+};
+
+class Planet : public CelestialBody {
+public:
+    Planet(const dvec3& pos, const dvec3& vel, double r, double m)
+        : CelestialBody(pos, vel, r, m) {
+        color = getColorForPlanet(mass, radius);
+    }
+
+    void draw(Shader& shader) override {
+        shader.Activate();
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(position));
+        shader.setMat4("model", model);
+        shader.setVec3("color", color);
+
+        vao.Bind();
+        ebo->Bind();
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        ebo->Unbind();
+        vao.Unbind();
+    }
+private:
+    glm::vec3 getColorForPlanet(double mass, double radius) {
+        // ... (implement color selection for planets)
+    }
+};
+
+class Star : public CelestialBody {
+public:
+    Star(const dvec3& pos, const dvec3& vel, double r, double m)
+        : CelestialBody(pos, vel, r, m) {
+        color = getColorForStar(mass, radius);
+    }
+
+    void draw(Shader& shader) override {
+        shader.Activate();
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(position));
+        shader.setMat4("model", model);
+        shader.setVec3("color", color);
+
+        vao.Bind();
+        ebo->Bind();
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        ebo->Unbind();
+        vao.Unbind();
+    }
+
+    glm::vec3 getLightColor() const {
+        return color;
+    }
+private:
+    glm::vec3 getColorForStar(double mass, double radius) {
+        // ... (implement color selection for stars)
     }
 };
 
@@ -248,7 +308,7 @@ class Octree {
 public:
     std::unique_ptr<OctreeNode> root;
 
-    void build(const std::vector<CelestialBody>& bodies) {
+    void build(const std::vector<std::unique_ptr<CelestialBody>>& bodies) {
 
         if (bodies.empty()) return;
 
@@ -264,9 +324,11 @@ public:
 
         root = std::make_unique<OctreeNode>(center, size);
 
-        for (const auto& body : bodies) {
-            root->insert(const_cast<CelestialBody*>(&body));
-        }
+            for (const auto& body : bodies) {
+                root->insert(body.get());
+            }
+
+
     }
 };
 
@@ -318,11 +380,10 @@ void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode
     }
 }
 
-// holy barnes-hut this is fast
-void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
+void calculateForcesOmp(std::vector<std::unique_ptr<CelestialBody>>& bodies, const OctreeNode* root) {
 #pragma omp parallel for
-    for (auto & body : bodies) {
-        calculateForce(&body, root);
+    for (auto& body : bodies) {
+        calculateForce(body.get(), root);
     }
 }
 
@@ -370,6 +431,8 @@ int main() {
     }
     glEnable(GL_DEPTH_TEST);
     Shader shader("assets/default.vert", "assets/default.frag");
+    Shader planetShader("assets/planet.vert", "assets/planet.frag");
+    Shader starShader("assets/star.vert", "assets/star.frag");
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -389,31 +452,35 @@ int main() {
     ImGui_ImplOpenGL3_Init("#version 330");
 
     // GENERATE BODIES
-    std::vector<CelestialBody> celestialBodies;
+    std::vector<std::unique_ptr<CelestialBody>> celestialBodies;
 
-    double velocityScale = 0.4;
     glm::dvec3 center(0.0, 0.0, 0.0);
     glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
-    // random sizes
+    celestialBodies.push_back(std::make_unique<Star>(
+        glm::dvec3(0.0, 0.0, 0.0),
+        glm::dvec3(0.0, 0.0, 0.0),
+        std::cbrt(1e4), // radius
+        1e13
+    ));
+    // Create planets
     std::uniform_real_distribution unif(1e7,3e9);
     std::default_random_engine re;
 
     for (int i = 0; i < 10000; ++i) {
         glm::dvec3 position = glm::sphericalRand(100.0);
-        glm::dvec3 toCenter = center - position;
-        glm::dvec3 velocity = glm::cross(up, toCenter);
+        glm::dvec3 toCenter = glm::dvec3(0.0) - position;
+        glm::dvec3 velocity = glm::cross(glm::dvec3(0.0, 0.0, 1.0), toCenter);
 
-        velocity = glm::normalize(velocity) * glm::length(toCenter) * velocityScale;
+        velocity = glm::normalize(velocity) * glm::length(toCenter) * 0.2;
 
         double mass = unif(re);
-        celestialBodies.emplace_back(
+        celestialBodies.push_back(std::make_unique<Planet>(
             position,
             velocity,
             std::cbrt(mass * 0.000000002), // radius
-            mass,
-            glm::vec3(1.0f, 0.9f, 0.2f)
-        );
+            mass
+        ));
     }
 
     int numObjects = celestialBodies.size();
@@ -503,9 +570,26 @@ int main() {
         start = std::chrono::high_resolution_clock::now();
         camera.Inputs(window);
         camera.Matrix(fov, near, far, shader, "camMatrix");
-        shader.setVec3("viewPos", camera.Position); // Update view position for specular lighting
-        for (auto& body : celestialBodies) {
-            body.draw(shader);
+        for (const auto& body : celestialBodies) {
+            if (dynamic_cast<Star*>(body.get())) {
+                starShader.Activate();
+                camera.Matrix(fov, near, far, starShader, "camMatrix");
+                starShader.setVec3("viewPos", camera.Position);
+                body->draw(starShader);
+
+                // Use this star as a light source for planets
+                glm::vec3 starPos = glm::vec3(body->position);
+                glm::vec3 starColor = dynamic_cast<Star*>(body.get())->getLightColor();
+
+                planetShader.Activate();
+                planetShader.setVec3("lightPos", starPos);
+                planetShader.setVec3("lightColor", starColor);
+            } else {
+                planetShader.Activate();
+                camera.Matrix(fov, near, far, planetShader, "camMatrix");
+                planetShader.setVec3("viewPos", camera.Position);
+                body->draw(planetShader);
+            }
         }
 
         ImGui::Render();
