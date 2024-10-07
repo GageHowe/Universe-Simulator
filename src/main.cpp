@@ -40,7 +40,7 @@ const float theta = 0.5f;  // Barnes-Hut opening angle, controls performance vs 
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
-constexpr float initialNear = 1.0f;   float near = initialNear;
+constexpr float initialNear = 1.0f;     float near = initialNear;
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -380,7 +380,6 @@ int main() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
 
-
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsLight();
@@ -416,6 +415,8 @@ int main() {
             glm::vec3(1.0f, 0.9f, 0.2f)
         );
     }
+
+    int numObjects = celestialBodies.size();
 
     // manages camera and zoom TODO: fix trackpad scrolling where values aren't necessarily 1 or -1
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 150.0f));
@@ -458,17 +459,6 @@ int main() {
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         // BUILD OCTREE
         auto start = std::chrono::high_resolution_clock::now();
         octree.build(celestialBodies);
@@ -489,10 +479,18 @@ int main() {
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         // ImGui windows and widgets
         {
             ImGui::Begin("Simulation Stats");
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("%d Objects", numObjects);
             // Add more ImGui widgets here as needed
             ImGui::End();
         }
@@ -505,7 +503,7 @@ int main() {
         for (auto& body : celestialBodies) {
             body.draw(shader);
         }
-        // Render ImGui
+
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
