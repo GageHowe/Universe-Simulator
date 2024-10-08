@@ -31,7 +31,7 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 0.0000001; //6.67430e-11f;  // The Gravitational constant :)
+const float G = 0.00000001; //6.67430e-11f;  // The Gravitational constant :)
 const float theta = 0.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
                             // at 0, there will be no optimization and every particle interacts with every other particle
                             // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
@@ -41,6 +41,13 @@ constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
 constexpr float initialNear = 1.0f;     float near = initialNear;
+
+bool show_create_body_menu = false;
+glm::dvec3 new_body_position(0.0, 0.0, 0.0);
+glm::dvec3 new_body_velocity(0.0, 0.0, 0.0);
+double new_body_radius = 1.0;
+double new_body_mass = 1e7;
+glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -60,9 +67,9 @@ void createSphereMesh(std::vector<float>& vertices, std::vector<unsigned int>& i
             vertices.push_back(xPos);
             vertices.push_back(yPos);
             vertices.push_back(zPos);
-            vertices.push_back(xSegment); // Use xSegment as r color
-            vertices.push_back(ySegment); // Use ySegment as g color
-            vertices.push_back(1.0f - ySegment); // Inverse of ySegment as b color
+            vertices.push_back(xSegment); // R
+            vertices.push_back(ySegment); // G
+            vertices.push_back(1.0f - ySegment); // B
         }
     }
 
@@ -244,6 +251,17 @@ private:
     }
 };
 
+// Add this function to create a new body
+void createNewBody(std::vector<CelestialBody>& celestialBodies) {
+    celestialBodies.emplace_back(
+        new_body_position,
+        new_body_velocity,
+        new_body_radius,
+        new_body_mass,
+        new_body_color
+    );
+}
+
 class Octree {
 public:
     std::unique_ptr<OctreeNode> root;
@@ -326,30 +344,6 @@ void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* ro
     }
 }
 
-glm::vec3 getColorForBody(double mass, double radius) {
-    // Example color scheme:
-    // - Blue for small, low mass bodies (like planets)
-    // - White-yellow for medium bodies
-    // - Red for large, high mass bodies (like red giants)
-
-    double massScale = std::log10(mass) / 30.0;  // Assuming masses range from about 1e24 to 1e30
-    double radiusScale = std::log10(radius) / 10.0;  // Adjust based on your radius range
-
-    glm::vec3 color;
-    if (massScale < 0.3) {
-        color = glm::mix(glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, 1.0, 1.0), massScale / 0.3);
-    } else if (massScale < 0.7) {
-        color = glm::mix(glm::vec3(0.0, 1.0, 1.0), glm::vec3(1.0, 1.0, 0.0), (massScale - 0.3) / 0.4);
-    } else {
-        color = glm::mix(glm::vec3(1.0, 1.0, 0.0), glm::vec3(1.0, 0.0, 0.0), (massScale - 0.7) / 0.3);
-    }
-
-    // Adjust brightness based on radius
-    color = glm::mix(color, glm::vec3(1.0), radiusScale);
-
-    return color;
-}
-
 int main() {
 
     // OPENGL INITIALIZATION
@@ -375,6 +369,7 @@ int main() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.Fonts->AddFontFromFileTTF("assets/Argon.ttf", 14.0f); // TODO: fix this
 
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -384,16 +379,24 @@ int main() {
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsLight();
 
-    // Setup Platform/Renderer backends
+    // setup backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
     // GENERATE BODIES
     std::vector<CelestialBody> celestialBodies;
 
-    double velocityScale = 0.4;
     glm::dvec3 center(0.0, 0.0, 0.0);
     glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
+
+    // star
+    celestialBodies.emplace_back(
+        dvec3(0.0, 0.0, 0.0),
+        dvec3(0.0, 0.0, 0.0),
+        6, // radius
+        1e13,
+        glm::vec3(1.0f, 0.9f, 0.2f)
+    );
 
     // random sizes
     std::uniform_real_distribution unif(1e7,3e9);
@@ -404,7 +407,7 @@ int main() {
         glm::dvec3 toCenter = center - position;
         glm::dvec3 velocity = glm::cross(up, toCenter);
 
-        velocity = glm::normalize(velocity) * glm::length(toCenter) * velocityScale;
+        velocity = glm::normalize(velocity) * glm::length(toCenter) * 0.3;
 
         double mass = unif(re);
         celestialBodies.emplace_back(
@@ -479,6 +482,7 @@ int main() {
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
+        // GRAPHICS THINGS
         start = std::chrono::high_resolution_clock::now();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -495,9 +499,39 @@ int main() {
             ImGui::End();
         }
 
+        if (ImGui::Button("Create New Body")) {
+            show_create_body_menu = true;
+        }
+
+        if (show_create_body_menu) {
+            ImGui::Begin("Create A New Body", &show_create_body_menu);
+
+            ImGui::Text("Position");
+            ImGui::InputDouble("X##pos", &new_body_position.x, 0.1, 1.0);
+            ImGui::InputDouble("Y##pos", &new_body_position.y, 0.1, 1.0);
+            ImGui::InputDouble("Z##pos", &new_body_position.z, 0.1, 1.0);
+
+            ImGui::Text("Velocity");
+            ImGui::InputDouble("X##vel", &new_body_velocity.x, 0.1, 1.0);
+            ImGui::InputDouble("Y##vel", &new_body_velocity.y, 0.1, 1.0);
+            ImGui::InputDouble("Z##vel", &new_body_velocity.z, 0.1, 1.0);
+
+            ImGui::InputDouble("Radius", &new_body_radius, 0.1, 1.0);
+            ImGui::InputDouble("Mass", &new_body_mass, 1e6, 1e7, "%.3e");
+
+            ImGui::ColorEdit3("Color", &new_body_color[0]);
+
+            if (ImGui::Button("Create Body")) {
+                createNewBody(celestialBodies);
+                numObjects = celestialBodies.size();
+                show_create_body_menu = false;
+            }
+
+            ImGui::End();
+        }
+
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "ImGUI setup took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
-
 
         // DO GRAPHICS STUFF
         start = std::chrono::high_resolution_clock::now();
