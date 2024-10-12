@@ -385,8 +385,10 @@ int main() {
         return -1;
     }
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_PROGRAM_POINT_SIZE);
     Shader shader("assets/default.vert", "assets/default.frag");
     Shader pointShader("assets/point.vert", "assets/point.frag");
+
     std::vector<float> pointVertices;
     VAO pointVAO;
     VBO* pointVBO = nullptr;
@@ -702,6 +704,8 @@ int main() {
         auto bigFinish = std::chrono::high_resolution_clock::now();
         std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
     }
+
+    delete pointVBO;
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
