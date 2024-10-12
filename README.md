@@ -1,3 +1,3 @@
 # README
 
-http://nilssondev.com/posts/my-journey-with-physics
+JOpenGL is now public
