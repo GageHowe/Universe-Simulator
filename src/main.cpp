@@ -1,3 +1,5 @@
+// https://en.wikipedia.org/wiki/Orders_of_magnitude_(mass)
+// https://en.wikipedia.org/wiki/Orders_of_magnitude_(length)
 // https://www.cs.cmu.edu/afs/cs.cmu.edu/project/scandal/public/papers/dimacs-nbody.pdf
 
 #include <iostream>
@@ -31,23 +33,44 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 0.00000001; //6.67430e-11f;  // The Gravitational constant :)
-const float theta = 0.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
-                            // at 0, there will be no optimization and every particle interacts with every other particle
-                            // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
-                            // this comes at the cost of accuracy
+// This simulation uses megameters and ronnagram as its base units. This achieves a balance of precision and support for large-scale simulations.
+const double Mm_to_m = 1e6;  // 1 Mm = 1,000,000 m; the moon is 3.476 Mm wide
+const double Rg_to_kg = 1e27; // 1 Rg = 1,000,000,000,000,000,000,000,000,000 kg; Earth is ~6 Rg
+const double G_SI = 6.67430e-11; // m^3 kg^-1 s^-2
+const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gravitational constant for Mm and Rg
 
+float time_step = 1.0f; // Initial time step (in seconds)
+bool isPaused = false;
+
+const double objectSize = 5e10f; // determines visible size for bodies in simulation, arbitrary value
+
+float theta = 1.0f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+
+// variables for managing zoom status and bounding planes
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
 constexpr float initialNear = 1.0f;     float near = initialNear;
 
+// for benchmarking
+long int octree_build_time = 0;
+long int force_calculation_time = 0;
+long int vel_pos_update_time = 0;
+long int imgui_render_time = 0;
+long int opengl_render_time = 0;
+
+// default values for creating new objects in the scene
 bool show_create_body_menu = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
 glm::dvec3 new_body_velocity(0.0, 0.0, 0.0);
 double new_body_radius = 1.0;
 double new_body_mass = 1e7;
 glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
+
+double totalElapsedTime = 0.0; // simulation time
+double realTimeElapsed = 0.0;
+double frameSimTime = 0.0;
+double frameRealTime = 0.0;
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -102,9 +125,8 @@ public:
 
     CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
         : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
-        createSphereMesh(vertices, indices, static_cast<float>(radius), 20);
-
-        // std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
+        double renderScale = 1e-3; // Adjust this factor to make bodies visible
+        createSphereMesh(vertices, indices, static_cast<float>(radius * renderScale), 10);
 
         if (vertices.empty() || indices.empty()) {
             throw std::runtime_error("Failed to create sphere mesh");
@@ -173,7 +195,7 @@ public:
         vao.Unbind();
     }
 
-    void update(double dt) { // verlet integration let's goooooooooo
+    void update(double dt) {
         // First half of position update
         position += velocity * (dt / 2.0);
 
@@ -251,7 +273,6 @@ private:
     }
 };
 
-// Add this function to create a new body
 void createNewBody(std::vector<CelestialBody>& celestialBodies) {
     celestialBodies.emplace_back(
         new_body_position,
@@ -267,7 +288,6 @@ public:
     std::unique_ptr<OctreeNode> root;
 
     void build(const std::vector<CelestialBody>& bodies) {
-
         if (bodies.empty()) return;
 
         // Find bounding box
@@ -336,7 +356,6 @@ void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode
     }
 }
 
-// holy barnes-hut this is fast
 void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
 #pragma omp parallel for
     for (auto & body : bodies) {
@@ -345,7 +364,6 @@ void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* ro
 }
 
 int main() {
-
     // OPENGL INITIALIZATION
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -379,51 +397,48 @@ int main() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.Fonts->AddFontFromFileTTF("assets/Argon.ttf", 14.0f); // TODO: fix this
+    io.Fonts->AddFontFromFileTTF("assets/Argon.ttf", 14.0f);
 
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
 
-    // setup backends
+    // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
     // GENERATE BODIES
     std::vector<CelestialBody> celestialBodies;
 
-    glm::dvec3 center(0.0, 0.0, 0.0);
-    glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
+    glm::dvec3 up(0.0, 0.0, 1.0);      // arbitrary rotation axis
 
-    // star
+    // sun
     celestialBodies.emplace_back(
-        dvec3(0.0, 0.0, 0.0),
-        dvec3(0.0, 0.0, 0.0),
-        6, // radius
-        1e13,
+        dvec3(0.0, 0.0, 0.0),  // Position in Mm
+        dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
+        std::cbrt(1.989 * objectSize),  // Radius in Mm (Sun's radius is about 0.696 Mm)
+        1.989,  // Mass in Rg (Sun's mass is about 1.989 Rg)
         glm::vec3(1.0f, 0.9f, 0.2f)
     );
 
-    // random sizes
-    std::uniform_real_distribution unif(1e7,3e9);
+    std::uniform_real_distribution unif(1e-6, 1e-3);  // Mass range in Rg
     std::default_random_engine re;
 
     for (int i = 0; i < 10000; ++i) {
-        glm::dvec3 position = glm::sphericalRand(100.0);
-        glm::dvec3 toCenter = center - position;
+        glm::dvec3 position = glm::sphericalRand(150.0);  // Positions up to 150 Mm
+        glm::dvec3 toCenter = dvec3(0.0f, 0.0f, 0.0f) - position;
         glm::dvec3 velocity = glm::cross(up, toCenter);
 
-        velocity = glm::normalize(velocity) * glm::length(toCenter) * 0.4;
+        velocity = glm::normalize(velocity) * sqrt(G * 1.989 / glm::length(toCenter));
 
         double mass = unif(re);
         celestialBodies.emplace_back(
             position,
             velocity,
-            std::cbrt(mass * 0.000000002), // radius
+            std::cbrt(mass * objectSize),
             mass,
             glm::vec3(1.0f, 0.9f, 0.2f)
         );
@@ -431,23 +446,22 @@ int main() {
 
     int numObjects = celestialBodies.size();
 
-    // manages camera and zoom TODO: fix trackpad scrolling where values aren't necessarily 1 or -1
+    // Camera setup
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 150.0f));
-    glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
+    glfwSetScrollCallback(window, [](GLFWwindow* window, double xoffset, double yoffset) {
         if (yoffset <= -1) { // zoom out
             if (zoomStatus > 2) {
                 zoomStatus = zoomStatus / (2 * -yoffset);
             } else {
                 std::cout << "can't zoom out any further" << std::endl;
             }
-        } else {
-            // zoom in
-       if (zoomStatus <= 2048) {
-           zoomStatus = zoomStatus * (2 * yoffset);
-       } else {
-           std::cout << "can't zoom in any further" << std::endl;
-       }
-   }
+        } else { // zoom in
+            if (zoomStatus <= 2048) {
+                zoomStatus = zoomStatus * (2 * yoffset);
+            } else {
+                std::cout << "can't zoom in any further" << std::endl;
+            }
+        }
         fov = initialFov * initialZoom / zoomStatus;
         near = initialNear * 8 * zoomStatus;
         far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
@@ -465,34 +479,48 @@ int main() {
 
     // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
-
         // FRAME COUNTING
         auto bigStart = std::chrono::high_resolution_clock::now();
         float currentFrame = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+        frameRealTime = deltaTime;
+        realTimeElapsed += deltaTime;
+        frameSimTime = deltaTime * time_step;
 
-        // BUILD OCTREE
-        auto start = std::chrono::high_resolution_clock::now();
-        octree.build(celestialBodies);
-        auto finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        std::chrono::time_point<std::chrono::system_clock> start;
+        std::chrono::time_point<std::chrono::system_clock> finish;
+        long int time;
 
-        // CALCULATE RELATIVE FORCES FOR ALL BODIES
-        start = std::chrono::high_resolution_clock::now();
-        calculateForcesOmp(celestialBodies, octree.root.get());
-        finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        if (!isPaused) {
+            // BUILD OCTREE
+            auto start = std::chrono::high_resolution_clock::now();
+            octree.build(celestialBodies); // this is the application's main bottleneck, but multithreading didn't add significant performance. TODO: find a better way of doing this
+            finish = std::chrono::high_resolution_clock::now();
+            time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+            std::cout << "Building octree took: " << time << " microseconds\n";
+            octree_build_time = time;
+            // CALCULATE RELATIVE FORCES FOR ALL BODIES
+            start = std::chrono::high_resolution_clock::now();
+            calculateForcesOmp(celestialBodies, octree.root.get());
+            finish = std::chrono::high_resolution_clock::now();
+            time =  std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
+            std::cout << "Calculating forces took: " << time << " microseconds\n";
+            force_calculation_time = time;
 
-        // UPDATE VELOCITY AND POSITION FOR ALL BODIES
-        start = std::chrono::high_resolution_clock::now();
-        for (auto& body : celestialBodies) {
-            body.update(deltaTime);
+            // UPDATE VELOCITY AND POSITION FOR ALL BODIES
+            start = std::chrono::high_resolution_clock::now();
+            for (auto& body : celestialBodies) {
+                body.update(deltaTime * time_step);
+            }
+            totalElapsedTime += deltaTime * time_step;
+            finish = std::chrono::high_resolution_clock::now();
+            time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+            std::cout << "Updating velocity and position took: " << time << " microseconds\n";
+            vel_pos_update_time = time;
         }
-        finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-        // GRAPHICS THINGS
+        // ImGui
         start = std::chrono::high_resolution_clock::now();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -501,33 +529,113 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ImGui windows and widgets for this window
+        // ImGUI
         {
-            ImGui::Begin("Simulation Stats");
-            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-            ImGui::Text("%d Objects", numObjects);
+            ImGui::Begin("Controls");
+
+                ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+                ImGui::Text("%d Objects", numObjects);
+
+                // Pause button
+                if (ImGui::Button(isPaused ? "Resume" : "Pause")) {
+                    isPaused = !isPaused;
+                }
+                ImGui::SameLine();
+                ImGui::Text(isPaused ? "Paused" : "Running");
+
+                // Time step control
+                ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
+
+                ImGui::SliderFloat("Barnes-Hut Theta", &theta, 0.1f, 2.0f, "%.1f");
+
+                if (ImGui::Button("Create New Body")) {
+                    show_create_body_menu = true;
+                }
+
+                ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
             ImGui::End();
         }
+        {
+            ImGui::Begin("Data");
 
-        if (ImGui::Button("Create New Body")) {
-            show_create_body_menu = true;
+            ImGui::Text("Simulated time per frame: %.2f seconds", time_step);
+
+            // Convert total elapsed time to appropriate units
+            if (totalElapsedTime < 60) {
+                ImGui::Text("Total simulated time: %.2f seconds", totalElapsedTime);
+            } else if (totalElapsedTime < 3600) {
+                ImGui::Text("Total simulated time: %.2f minutes", totalElapsedTime / 60.0);
+            } else if (totalElapsedTime < 86400) {
+                ImGui::Text("Total simulated time: %.2f hours", totalElapsedTime / 3600.0);
+            } else {
+                ImGui::Text("Total simulated time: %.2f days", totalElapsedTime / 86400.0);
+            }
+
+            // Display real time elapsed
+            ImGui::Text("Real time elapsed: %.2f seconds", realTimeElapsed);
+
+            // Calculate and display current simulation speed
+            double currentSimulationSpeed = frameSimTime / frameRealTime;
+            if (currentSimulationSpeed < 1) {
+                ImGui::Text("Simulation speed: %.2f simulated seconds per real second%s",
+                            currentSimulationSpeed,
+                            isPaused ? " (Paused)" : "");
+            } else if (currentSimulationSpeed < 60) {
+                ImGui::Text("Simulation speed: %.2fx real time%s",
+                            currentSimulationSpeed,
+                            isPaused ? " (Paused)" : "");
+            } else if (currentSimulationSpeed < 3600) {
+                ImGui::Text("Simulation speed: %.2f simulated minutes per real second%s",
+                            currentSimulationSpeed / 60.0,
+                            isPaused ? " (Paused)" : "");
+            } else if (currentSimulationSpeed < 86400) {
+                ImGui::Text("Simulation speed: %.2f simulated hours per real second%s",
+                            currentSimulationSpeed / 3600.0,
+                            isPaused ? " (Paused)" : "");
+            } else {
+                ImGui::Text("Simulation speed: %.2f simulated days per real second%s",
+                            currentSimulationSpeed / 86400.0,
+                            isPaused ? " (Paused)" : "");
+            }
+
+            ImGui::End();
         }
+        {
+            ImGui::Begin("Performance");
 
+            ImGui::Text("Building octree took %i microseconds", octree_build_time);
+            ImGui::Text("Calculating forces took %i microseconds", force_calculation_time);
+            ImGui::Text("Calculating velocities and positions took %i microseconds", vel_pos_update_time);
+            ImGui::Text("Rendering ImGui took %i microseconds", imgui_render_time);
+            ImGui::Text("Rendering with OpenGL took %i microseconds", opengl_render_time);
+
+            ImGui::End();
+        }
+        {
+            ImGui::Begin("Help");
+
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::Text("Barnes-Hut Approximation is a process that utilizes spatial partitioning techniques like octrees in order to optimize calculation of forces. This can be used for gravity, collisions, magnetism, etc.");
+            ImGui::Text("Octrees are a recursive datatype used for recursively partitioning groups of objects in space.");
+
+            ImGui::End();
+        }
         if (show_create_body_menu) {
             ImGui::Begin("Create A New Body", &show_create_body_menu);
 
-            ImGui::Text("Position");
+            ImGui::Text("Position (Mm)");
             ImGui::InputDouble("X##pos", &new_body_position.x, 0.1, 1.0);
             ImGui::InputDouble("Y##pos", &new_body_position.y, 0.1, 1.0);
             ImGui::InputDouble("Z##pos", &new_body_position.z, 0.1, 1.0);
 
-            ImGui::Text("Velocity");
+            ImGui::Text("Velocity (Mm/s)");
             ImGui::InputDouble("X##vel", &new_body_velocity.x, 0.1, 1.0);
             ImGui::InputDouble("Y##vel", &new_body_velocity.y, 0.1, 1.0);
             ImGui::InputDouble("Z##vel", &new_body_velocity.z, 0.1, 1.0);
 
-            ImGui::InputDouble("Radius", &new_body_radius, 0.1, 1.0);
-            ImGui::InputDouble("Mass", &new_body_mass, 1e6, 1e7, "%.3e");
+            ImGui::InputDouble("Radius (Mm)", &new_body_radius, 0.1, 1.0);
+            ImGui::InputDouble("Mass (Rg)", &new_body_mass, 1e-6, 1e-3, "%.3e");
 
             ImGui::ColorEdit3("Color", &new_body_color[0]);
 
@@ -541,7 +649,9 @@ int main() {
         }
 
         finish = std::chrono::high_resolution_clock::now();
-        std::cout << "ImGUI setup took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        time =  std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
+        std::cout << "ImGUI setup took: " << time << " microseconds\n";
+        imgui_render_time = time;
 
         // DO GRAPHICS STUFF
         start = std::chrono::high_resolution_clock::now();
@@ -587,7 +697,9 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
         finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Rendering stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        time = std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
+        std::cout << "Rendering stuff took: " << time << " microseconds\n";
+        opengl_render_time = time;
 
         auto bigFinish = std::chrono::high_resolution_clock::now();
         std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
