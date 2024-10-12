@@ -52,6 +52,7 @@ constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
 constexpr float initialNear = 1.0f;     float near = initialNear;
 
+// for benchmarking
 long int octree_build_time = 0;
 long int force_calculation_time = 0;
 long int vel_pos_update_time = 0;
@@ -410,10 +411,9 @@ int main() {
     // GENERATE BODIES
     std::vector<CelestialBody> celestialBodies;
 
-    glm::dvec3 center(0.0, 0.0, 0.0);
-    glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
+    glm::dvec3 up(0.0, 0.0, 1.0);      // arbitrary rotation axis
 
-    // larger body, maybe a star (Sun-like)
+    // sun
     celestialBodies.emplace_back(
         dvec3(0.0, 0.0, 0.0),  // Position in Mm
         dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
@@ -422,13 +422,12 @@ int main() {
         glm::vec3(1.0f, 0.9f, 0.2f)
     );
 
-    // generator for random sizes
     std::uniform_real_distribution unif(1e-6, 1e-3);  // Mass range in Rg
     std::default_random_engine re;
 
     for (int i = 0; i < 10000; ++i) {
         glm::dvec3 position = glm::sphericalRand(150.0);  // Positions up to 150 Mm
-        glm::dvec3 toCenter = center - position;
+        glm::dvec3 toCenter = dvec3(0.0f, 0.0f, 0.0f) - position;
         glm::dvec3 velocity = glm::cross(up, toCenter);
 
         velocity = glm::normalize(velocity) * sqrt(G * 1.989 / glm::length(toCenter));
@@ -494,7 +493,7 @@ int main() {
         if (!isPaused) {
             // BUILD OCTREE
             auto start = std::chrono::high_resolution_clock::now();
-            octree.build(celestialBodies);
+            octree.build(celestialBodies); // this is the application's main bottleneck, but multithreading didn't add significant performance. TODO: find a better way of doing this
             finish = std::chrono::high_resolution_clock::now();
             time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
             std::cout << "Building octree took: " << time << " microseconds\n";
@@ -685,7 +684,7 @@ int main() {
         pointVAO.Bind();
         glDrawArrays(GL_POINTS, 0, pointVertices.size() / 3);
         pointVAO.Unbind();
-        
+
         for (auto& body : celestialBodies) {
             body.draw(shader);
         }
