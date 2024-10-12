@@ -367,7 +367,13 @@ int main() {
         return -1;
     }
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_PROGRAM_POINT_SIZE);
     Shader shader("assets/default.vert", "assets/default.frag");
+    Shader pointShader("assets/point.vert", "assets/point.frag");
+
+    std::vector<float> pointVertices;
+    VAO pointVAO;
+    VBO* pointVBO = nullptr;
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -542,6 +548,35 @@ int main() {
         camera.Inputs(window);
         camera.Matrix(fov, near, far, shader, "camMatrix");
         shader.setVec3("viewPos", camera.Position); // Update view position for specular lighting
+
+        // Update point vertices
+        pointVertices.clear();
+        for (const auto& body : celestialBodies) {
+            pointVertices.push_back(static_cast<float>(body.position.x));
+            pointVertices.push_back(static_cast<float>(body.position.y));
+            pointVertices.push_back(static_cast<float>(body.position.z));
+        }
+
+        // Update or create point VBO
+        if (pointVBO == nullptr) {
+            pointVBO = new VBO(pointVertices.data(), pointVertices.size() * sizeof(float));
+            pointVAO.Bind();
+            pointVAO.LinkAttrib(*pointVBO, 0, 3, GL_FLOAT, 3 * sizeof(float), (void*)0);
+            pointVAO.Unbind();
+            pointVBO->Unbind();
+        } else {
+            pointVBO->Bind();
+            glBufferData(GL_ARRAY_BUFFER, pointVertices.size() * sizeof(float), pointVertices.data(), GL_DYNAMIC_DRAW);
+            pointVBO->Unbind();
+        }
+
+        // Render points
+        pointShader.Activate();
+        camera.Matrix(fov, near, far, pointShader, "camMatrix");
+        pointVAO.Bind();
+        glDrawArrays(GL_POINTS, 0, pointVertices.size() / 3);
+        pointVAO.Unbind();
+
         for (auto& body : celestialBodies) {
             body.draw(shader);
         }
@@ -557,6 +592,8 @@ int main() {
         auto bigFinish = std::chrono::high_resolution_clock::now();
         std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
     }
+
+    delete pointVBO;
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
