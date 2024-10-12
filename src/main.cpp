@@ -33,9 +33,9 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-// Constants and unit conversions - This simulation uses Ru
-const double Mm_to_m = 1e6;  // 1 Mm = 1,000,000 m
-const double Rg_to_kg = 1e27; // 1 Rg = 1,000,000,000,000,000,000,000,000,000 kg
+// This simulation uses megameters and ronnagram as its base units. This achieves a balance of precision and support for large-scale simulations.
+const double Mm_to_m = 1e6;  // 1 Mm = 1,000,000 m; the moon is 3.476 Mm wide
+const double Rg_to_kg = 1e27; // 1 Rg = 1,000,000,000,000,000,000,000,000,000 kg; Earth is ~6 Rg
 const double G_SI = 6.67430e-11; // m^3 kg^-1 s^-2
 const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gravitational constant for Mm and Rg
 
@@ -43,9 +43,9 @@ const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gra
 float time_step = 1.0f; // Initial time step (in seconds)
 float time_factor = 1.0f; // Time acceleration factor
 
-const double objectSize = 5e10f; // determines visible size for bodies in simulation
+const double objectSize = 5e10f; // determines visible size for bodies in simulation, arbitrary value
 
-const float theta = 0.5f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+const float theta = 1.0f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
 
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
@@ -405,7 +405,7 @@ int main() {
     celestialBodies.emplace_back(
         dvec3(0.0, 0.0, 0.0),  // Position in Mm
         dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
-        0.696 * objectSize,  // Radius in Mm (Sun's radius is about 0.696 Mm)
+        std::cbrt(1.989 * objectSize),  // Radius in Mm (Sun's radius is about 0.696 Mm)
         1.989,  // Mass in Rg (Sun's mass is about 1.989 Rg)
         glm::vec3(1.0f, 0.9f, 0.2f)
     );
