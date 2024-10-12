@@ -509,7 +509,7 @@ int main() {
 
             // UPDATE VELOCITY AND POSITION FOR ALL BODIES
             start = std::chrono::high_resolution_clock::now();
-            for (auto& body : celestialBodies) { // TODO: multithread this
+            for (auto& body : celestialBodies) {
                 body.update(deltaTime * time_step);
             }
             totalElapsedTime += deltaTime * time_step;
@@ -519,7 +519,7 @@ int main() {
             vel_pos_update_time = time;
         }
 
-        // GRAPHICS THINGS
+        // ImGui
         start = std::chrono::high_resolution_clock::now();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -528,6 +528,7 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // ImGUI
         {
             ImGui::Begin("Controls");
 
@@ -610,7 +611,15 @@ int main() {
 
             ImGui::End();
         }
+        {
+            ImGui::Begin("Help");
 
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::Text("Barnes-Hut Approximation is a process that utilizes spatial partitioning techniques like octrees in order to optimize calculation of forces. This can be used for gravity, collisions, magnetism, etc.");
+            ImGui::Text("Octrees are a recursive datatype used for recursively partitioning groups of objects in space.");
+
+            ImGui::End();
+        }
         if (show_create_body_menu) {
             ImGui::Begin("Create A New Body", &show_create_body_menu);
 
