@@ -52,6 +52,12 @@ constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
 constexpr float initialNear = 1.0f;     float near = initialNear;
 
+long int octree_build_time = 0;
+long int force_calculation_time = 0;
+long int vel_pos_update_time = 0;
+long int imgui_render_time = 0;
+long int opengl_render_time = 0;
+
 // default values for creating new objects in the scene
 bool show_create_body_menu = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
@@ -483,28 +489,34 @@ int main() {
 
         std::chrono::time_point<std::chrono::system_clock> start;
         std::chrono::time_point<std::chrono::system_clock> finish;
+        long int time;
 
         if (!isPaused) {
             // BUILD OCTREE
             auto start = std::chrono::high_resolution_clock::now();
             octree.build(celestialBodies);
             finish = std::chrono::high_resolution_clock::now();
-            std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
-
+            time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+            std::cout << "Building octree took: " << time << " microseconds\n";
+            octree_build_time = time;
             // CALCULATE RELATIVE FORCES FOR ALL BODIES
             start = std::chrono::high_resolution_clock::now();
             calculateForcesOmp(celestialBodies, octree.root.get());
             finish = std::chrono::high_resolution_clock::now();
-            std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+            time =  std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
+            std::cout << "Calculating forces took: " << time << " microseconds\n";
+            force_calculation_time = time;
 
             // UPDATE VELOCITY AND POSITION FOR ALL BODIES
             start = std::chrono::high_resolution_clock::now();
             for (auto& body : celestialBodies) { // TODO: multithread this
                 body.update(deltaTime * time_step);
-                totalElapsedTime += deltaTime * time_step;
             }
+            totalElapsedTime += deltaTime * time_step;
             finish = std::chrono::high_resolution_clock::now();
-            std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+            time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+            std::cout << "Updating velocity and position took: " << time << " microseconds\n";
+            vel_pos_update_time = time;
         }
 
         // GRAPHICS THINGS
@@ -588,7 +600,13 @@ int main() {
             ImGui::End();
         }
         {
-            ImGui::Begin("Help");
+            ImGui::Begin("Performance");
+
+            ImGui::Text("Building octree took %i microseconds", octree_build_time);
+            ImGui::Text("Calculating forces took %i microseconds", force_calculation_time);
+            ImGui::Text("Calculating velocities and positions took %i microseconds", vel_pos_update_time);
+            ImGui::Text("Rendering ImGui took %i microseconds", imgui_render_time);
+            ImGui::Text("Rendering with OpenGL took %i microseconds", opengl_render_time);
 
             ImGui::End();
         }
@@ -621,7 +639,9 @@ int main() {
         }
 
         finish = std::chrono::high_resolution_clock::now();
-        std::cout << "ImGUI setup took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        time =  std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
+        std::cout << "ImGUI setup took: " << time << " microseconds\n";
+        imgui_render_time = time;
 
         // DO GRAPHICS STUFF
         start = std::chrono::high_resolution_clock::now();
@@ -667,7 +687,9 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
         finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Rendering stuff took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        time = std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
+        std::cout << "Rendering stuff took: " << time << " microseconds\n";
+        opengl_render_time = time;
 
         auto bigFinish = std::chrono::high_resolution_clock::now();
         std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
