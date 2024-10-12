@@ -33,17 +33,17 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-// Constants and unit conversions
+// Constants and unit conversions - This simulation uses Ru
 const double Mm_to_m = 1e6;  // 1 Mm = 1,000,000 m
 const double Rg_to_kg = 1e27; // 1 Rg = 1,000,000,000,000,000,000,000,000,000 kg
 const double G_SI = 6.67430e-11; // m^3 kg^-1 s^-2
-
-// Adjusted gravitational constant for Mm and Rg
-const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m);
+const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gravitational constant for Mm and Rg
 
 // Time step control
 float time_step = 1.0f; // Initial time step (in seconds)
 float time_factor = 1.0f; // Time acceleration factor
+
+const double objectSize = 5e10f; // determines visible size for bodies in simulation
 
 const float theta = 0.5f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
 
@@ -113,7 +113,7 @@ public:
     CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
         : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
         double renderScale = 1e-3; // Adjust this factor to make bodies visible
-        createSphereMesh(vertices, indices, static_cast<float>(radius * renderScale), 20);
+        createSphereMesh(vertices, indices, static_cast<float>(radius * renderScale), 10);
 
         if (vertices.empty() || indices.empty()) {
             throw std::runtime_error("Failed to create sphere mesh");
@@ -405,7 +405,7 @@ int main() {
     celestialBodies.emplace_back(
         dvec3(0.0, 0.0, 0.0),  // Position in Mm
         dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
-        0.696,  // Radius in Mm (Sun's radius is about 0.696 Mm)
+        0.696 * objectSize,  // Radius in Mm (Sun's radius is about 0.696 Mm)
         1.989,  // Mass in Rg (Sun's mass is about 1.989 Rg)
         glm::vec3(1.0f, 0.9f, 0.2f)
     );
@@ -425,7 +425,7 @@ int main() {
         celestialBodies.emplace_back(
             position,
             velocity,
-            std::cbrt(mass * 5e-4),  // Rough estimate for radius based on mass
+            std::cbrt(mass * objectSize),
             mass,
             glm::vec3(1.0f, 0.9f, 0.2f)
         );
