@@ -47,11 +47,13 @@ const double objectSize = 5e10f; // determines visible size for bodies in simula
 
 const float theta = 1.0f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
 
+// variables for managing zoom status and bounding planes
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
 constexpr float initialFar = 5000.0f;   float far = initialFar;
 constexpr float initialNear = 1.0f;     float near = initialNear;
 
+// default values for creating new objects in the scene
 bool show_create_body_menu = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
 glm::dvec3 new_body_velocity(0.0, 0.0, 0.0);
