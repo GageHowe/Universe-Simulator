@@ -1,3 +1,5 @@
+// https://en.wikipedia.org/wiki/Orders_of_magnitude_(mass)
+// https://en.wikipedia.org/wiki/Orders_of_magnitude_(length)
 // https://www.cs.cmu.edu/afs/cs.cmu.edu/project/scandal/public/papers/dimacs-nbody.pdf
 
 #include <iostream>
@@ -31,11 +33,19 @@
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-const float G = 0.00000001; //6.67430e-11f;  // The Gravitational constant :)
-const float theta = 0.5f;  // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
-                            // at 0, there will be no optimization and every particle interacts with every other particle
-                            // at values of 1 or greater, Barnes-Hut groups particles much more often, approaching O(n) runtime
-                            // this comes at the cost of accuracy
+// Constants and unit conversions
+const double Mm_to_m = 1e6;  // 1 Mm = 1,000,000 m
+const double Rg_to_kg = 1e27; // 1 Rg = 1,000,000,000,000,000,000,000,000,000 kg
+const double G_SI = 6.67430e-11; // m^3 kg^-1 s^-2
+
+// Adjusted gravitational constant for Mm and Rg
+const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m);
+
+// Time step control
+float time_step = 1.0f; // Initial time step (in seconds)
+float time_factor = 1.0f; // Time acceleration factor
+
+const float theta = 0.5f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
 
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
 constexpr float initialFov = 80.0f;     float fov = initialFov;
@@ -102,9 +112,8 @@ public:
 
     CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
         : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
-        createSphereMesh(vertices, indices, static_cast<float>(radius), 20);
-
-        // std::cout << "Vertices: " << vertices.size() << ", Indices: " << indices.size() << std::endl;
+        double renderScale = 1e-3; // Adjust this factor to make bodies visible
+        createSphereMesh(vertices, indices, static_cast<float>(radius * renderScale), 20);
 
         if (vertices.empty() || indices.empty()) {
             throw std::runtime_error("Failed to create sphere mesh");
@@ -173,7 +182,7 @@ public:
         vao.Unbind();
     }
 
-    void update(double dt) { // verlet integration let's goooooooooo
+    void update(double dt) {
         // First half of position update
         position += velocity * (dt / 2.0);
 
@@ -251,7 +260,6 @@ private:
     }
 };
 
-// Add this function to create a new body
 void createNewBody(std::vector<CelestialBody>& celestialBodies) {
     celestialBodies.emplace_back(
         new_body_position,
@@ -267,7 +275,6 @@ public:
     std::unique_ptr<OctreeNode> root;
 
     void build(const std::vector<CelestialBody>& bodies) {
-
         if (bodies.empty()) return;
 
         // Find bounding box
@@ -336,7 +343,6 @@ void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode
     }
 }
 
-// holy barnes-hut this is fast
 void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
 #pragma omp parallel for
     for (auto & body : bodies) {
@@ -345,7 +351,6 @@ void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* ro
 }
 
 int main() {
-
     // OPENGL INITIALIZATION
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -373,17 +378,16 @@ int main() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.Fonts->AddFontFromFileTTF("assets/Argon.ttf", 14.0f); // TODO: fix this
+    io.Fonts->AddFontFromFileTTF("assets/Argon.ttf", 14.0f);
 
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
 
-    // setup backends
+    // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
@@ -393,31 +397,31 @@ int main() {
     glm::dvec3 center(0.0, 0.0, 0.0);
     glm::dvec3 up(0.0, 0.0, 1.0);      // rotation axis
 
-    // star
+    // larger body, maybe a star (Sun-like)
     celestialBodies.emplace_back(
-        dvec3(0.0, 0.0, 0.0),
-        dvec3(0.0, 0.0, 0.0),
-        6, // radius
-        1e13,
+        dvec3(0.0, 0.0, 0.0),  // Position in Mm
+        dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
+        0.696,  // Radius in Mm (Sun's radius is about 0.696 Mm)
+        1.989,  // Mass in Rg (Sun's mass is about 1.989 Rg)
         glm::vec3(1.0f, 0.9f, 0.2f)
     );
 
-    // random sizes
-    std::uniform_real_distribution unif(1e7,3e9);
+    // generator for random sizes
+    std::uniform_real_distribution unif(1e-6, 1e-3);  // Mass range in Rg
     std::default_random_engine re;
 
     for (int i = 0; i < 10000; ++i) {
-        glm::dvec3 position = glm::sphericalRand(100.0);
+        glm::dvec3 position = glm::sphericalRand(150.0);  // Positions up to 150 Mm
         glm::dvec3 toCenter = center - position;
         glm::dvec3 velocity = glm::cross(up, toCenter);
 
-        velocity = glm::normalize(velocity) * glm::length(toCenter) * 0.4;
+        velocity = glm::normalize(velocity) * sqrt(G * 1.989 / glm::length(toCenter));
 
         double mass = unif(re);
         celestialBodies.emplace_back(
             position,
             velocity,
-            std::cbrt(mass * 0.000000002), // radius
+            std::cbrt(mass * 5e-4),  // Rough estimate for radius based on mass
             mass,
             glm::vec3(1.0f, 0.9f, 0.2f)
         );
@@ -425,23 +429,22 @@ int main() {
 
     int numObjects = celestialBodies.size();
 
-    // manages camera and zoom TODO: fix trackpad scrolling where values aren't necessarily 1 or -1
+    // Camera setup
     Camera camera(SCR_WIDTH, SCR_HEIGHT, glm::vec3(0.0f, 0.0f, 150.0f));
-    glfwSetScrollCallback(window, [](GLFWwindow* window,double xoffset, double yoffset) {
+    glfwSetScrollCallback(window, [](GLFWwindow* window, double xoffset, double yoffset) {
         if (yoffset <= -1) { // zoom out
             if (zoomStatus > 2) {
                 zoomStatus = zoomStatus / (2 * -yoffset);
             } else {
                 std::cout << "can't zoom out any further" << std::endl;
             }
-        } else {
-            // zoom in
-       if (zoomStatus <= 2048) {
-           zoomStatus = zoomStatus * (2 * yoffset);
-       } else {
-           std::cout << "can't zoom in any further" << std::endl;
-       }
-   }
+        } else { // zoom in
+            if (zoomStatus <= 2048) {
+                zoomStatus = zoomStatus * (2 * yoffset);
+            } else {
+                std::cout << "can't zoom in any further" << std::endl;
+            }
+        }
         fov = initialFov * initialZoom / zoomStatus;
         near = initialNear * 8 * zoomStatus;
         far = initialFar / initialZoom * pow(zoomStatus, 1.4); // 1.4 is a temporary value
@@ -459,7 +462,6 @@ int main() {
 
     // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
-
         // FRAME COUNTING
         auto bigStart = std::chrono::high_resolution_clock::now();
         float currentFrame = static_cast<float>(glfwGetTime());
@@ -481,7 +483,7 @@ int main() {
         // UPDATE VELOCITY AND POSITION FOR ALL BODIES
         start = std::chrono::high_resolution_clock::now();
         for (auto& body : celestialBodies) {
-            body.update(deltaTime);
+            body.update(deltaTime * time_step * time_factor);
         }
         finish = std::chrono::high_resolution_clock::now();
         std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
@@ -495,11 +497,17 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ImGui windows and widgets for this window
+        // ImGui windows and widgets
         {
-            ImGui::Begin("Simulation Stats");
+            ImGui::Begin("Simulation Controls");
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::Text("%d Objects", numObjects);
+
+            // Time step control
+            ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
+            ImGui::SliderFloat("Time Factor", &time_factor, 0.1f, 1000.0f, "%.1f");
+
+            ImGui::Text("Simulated time per frame: %.2f seconds", time_step * time_factor);
             ImGui::End();
         }
 
@@ -510,18 +518,18 @@ int main() {
         if (show_create_body_menu) {
             ImGui::Begin("Create A New Body", &show_create_body_menu);
 
-            ImGui::Text("Position");
+            ImGui::Text("Position (Mm)");
             ImGui::InputDouble("X##pos", &new_body_position.x, 0.1, 1.0);
             ImGui::InputDouble("Y##pos", &new_body_position.y, 0.1, 1.0);
             ImGui::InputDouble("Z##pos", &new_body_position.z, 0.1, 1.0);
 
-            ImGui::Text("Velocity");
+            ImGui::Text("Velocity (Mm/s)");
             ImGui::InputDouble("X##vel", &new_body_velocity.x, 0.1, 1.0);
             ImGui::InputDouble("Y##vel", &new_body_velocity.y, 0.1, 1.0);
             ImGui::InputDouble("Z##vel", &new_body_velocity.z, 0.1, 1.0);
 
-            ImGui::InputDouble("Radius", &new_body_radius, 0.1, 1.0);
-            ImGui::InputDouble("Mass", &new_body_mass, 1e6, 1e7, "%.3e");
+            ImGui::InputDouble("Radius (Mm)", &new_body_radius, 0.1, 1.0);
+            ImGui::InputDouble("Mass (Rg)", &new_body_mass, 1e-6, 1e-3, "%.3e");
 
             ImGui::ColorEdit3("Color", &new_body_color[0]);
 
