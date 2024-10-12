@@ -39,13 +39,12 @@ const double Rg_to_kg = 1e27; // 1 Rg = 1,000,000,000,000,000,000,000,000,000 kg
 const double G_SI = 6.67430e-11; // m^3 kg^-1 s^-2
 const float G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gravitational constant for Mm and Rg
 
-// Time step control
 float time_step = 1.0f; // Initial time step (in seconds)
-float time_factor = 1.0f; // Time acceleration factor
+bool isPaused = false;
 
 const double objectSize = 5e10f; // determines visible size for bodies in simulation, arbitrary value
 
-const float theta = 1.0f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
+float theta = 1.0f; // Barnes-Hut opening angle, controls performance vs accuracy tradeoff
 
 // variables for managing zoom status and bounding planes
 constexpr int initialZoom = 2;          int zoomStatus = initialZoom;
@@ -60,6 +59,11 @@ glm::dvec3 new_body_velocity(0.0, 0.0, 0.0);
 double new_body_radius = 1.0;
 double new_body_mass = 1e7;
 glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
+
+double totalElapsedTime = 0.0; // simulation time
+double realTimeElapsed = 0.0;
+double frameSimTime = 0.0;
+double frameRealTime = 0.0;
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -473,26 +477,35 @@ int main() {
         float currentFrame = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+        frameRealTime = deltaTime;
+        realTimeElapsed += deltaTime;
+        frameSimTime = deltaTime * time_step;
 
-        // BUILD OCTREE
-        auto start = std::chrono::high_resolution_clock::now();
-        octree.build(celestialBodies);
-        auto finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        std::chrono::time_point<std::chrono::system_clock> start;
+        std::chrono::time_point<std::chrono::system_clock> finish;
 
-        // CALCULATE RELATIVE FORCES FOR ALL BODIES
-        start = std::chrono::high_resolution_clock::now();
-        calculateForcesOmp(celestialBodies, octree.root.get());
-        finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+        if (!isPaused) {
+            // BUILD OCTREE
+            auto start = std::chrono::high_resolution_clock::now();
+            octree.build(celestialBodies);
+            finish = std::chrono::high_resolution_clock::now();
+            std::cout << "Building octree took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
-        // UPDATE VELOCITY AND POSITION FOR ALL BODIES
-        start = std::chrono::high_resolution_clock::now();
-        for (auto& body : celestialBodies) {
-            body.update(deltaTime * time_step * time_factor);
+            // CALCULATE RELATIVE FORCES FOR ALL BODIES
+            start = std::chrono::high_resolution_clock::now();
+            calculateForcesOmp(celestialBodies, octree.root.get());
+            finish = std::chrono::high_resolution_clock::now();
+            std::cout << "Calculating forces took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
+
+            // UPDATE VELOCITY AND POSITION FOR ALL BODIES
+            start = std::chrono::high_resolution_clock::now();
+            for (auto& body : celestialBodies) { // TODO: multithread this
+                body.update(deltaTime * time_step);
+                totalElapsedTime += deltaTime * time_step;
+            }
+            finish = std::chrono::high_resolution_clock::now();
+            std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
         }
-        finish = std::chrono::high_resolution_clock::now();
-        std::cout << "Updating velocity and position took: " << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n";
 
         // GRAPHICS THINGS
         start = std::chrono::high_resolution_clock::now();
@@ -503,22 +516,81 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ImGui windows and widgets
         {
-            ImGui::Begin("Simulation Controls");
-            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-            ImGui::Text("%d Objects", numObjects);
+            ImGui::Begin("Controls");
 
-            // Time step control
-            ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
-            ImGui::SliderFloat("Time Factor", &time_factor, 0.1f, 1000.0f, "%.1f");
+                ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+                ImGui::Text("%d Objects", numObjects);
 
-            ImGui::Text("Simulated time per frame: %.2f seconds", time_step * time_factor);
+                // Pause button
+                if (ImGui::Button(isPaused ? "Resume" : "Pause")) {
+                    isPaused = !isPaused;
+                }
+                ImGui::SameLine();
+                ImGui::Text(isPaused ? "Paused" : "Running");
+
+                // Time step control
+                ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
+
+                ImGui::SliderFloat("Barnes-Hut Theta", &theta, 0.1f, 2.0f, "%.1f");
+
+                if (ImGui::Button("Create New Body")) {
+                    show_create_body_menu = true;
+                }
+
+                ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
             ImGui::End();
         }
+        {
+            ImGui::Begin("Data");
 
-        if (ImGui::Button("Create New Body")) {
-            show_create_body_menu = true;
+            ImGui::Text("Simulated time per frame: %.2f seconds", time_step);
+
+            // Convert total elapsed time to appropriate units
+            if (totalElapsedTime < 60) {
+                ImGui::Text("Total simulated time: %.2f seconds", totalElapsedTime);
+            } else if (totalElapsedTime < 3600) {
+                ImGui::Text("Total simulated time: %.2f minutes", totalElapsedTime / 60.0);
+            } else if (totalElapsedTime < 86400) {
+                ImGui::Text("Total simulated time: %.2f hours", totalElapsedTime / 3600.0);
+            } else {
+                ImGui::Text("Total simulated time: %.2f days", totalElapsedTime / 86400.0);
+            }
+
+            // Display real time elapsed
+            ImGui::Text("Real time elapsed: %.2f seconds", realTimeElapsed);
+
+            // Calculate and display current simulation speed
+            double currentSimulationSpeed = frameSimTime / frameRealTime;
+            if (currentSimulationSpeed < 1) {
+                ImGui::Text("Simulation speed: %.2f simulated seconds per real second%s",
+                            currentSimulationSpeed,
+                            isPaused ? " (Paused)" : "");
+            } else if (currentSimulationSpeed < 60) {
+                ImGui::Text("Simulation speed: %.2fx real time%s",
+                            currentSimulationSpeed,
+                            isPaused ? " (Paused)" : "");
+            } else if (currentSimulationSpeed < 3600) {
+                ImGui::Text("Simulation speed: %.2f simulated minutes per real second%s",
+                            currentSimulationSpeed / 60.0,
+                            isPaused ? " (Paused)" : "");
+            } else if (currentSimulationSpeed < 86400) {
+                ImGui::Text("Simulation speed: %.2f simulated hours per real second%s",
+                            currentSimulationSpeed / 3600.0,
+                            isPaused ? " (Paused)" : "");
+            } else {
+                ImGui::Text("Simulation speed: %.2f simulated days per real second%s",
+                            currentSimulationSpeed / 86400.0,
+                            isPaused ? " (Paused)" : "");
+            }
+
+            ImGui::End();
+        }
+        {
+            ImGui::Begin("Help");
+
+            ImGui::End();
         }
 
         if (show_create_body_menu) {
