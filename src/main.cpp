@@ -557,9 +557,9 @@ int main() {
                 ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
 
                 ImGui::SliderInt("Steps per Octree Rebuild", &stepsPerOctreeRebuild, 1, 50);
-                ImGui::SliderInt("Steps per Visual Frame", &stepsPerVisualFrame, 1, 100);
+                ImGui::SliderInt("Subdivisions", &stepsPerVisualFrame, 1, 100);
 
-                ImGui::SliderFloat("Barnes-Hut Theta", &theta, 0.1f, 2.0f, "%.1f");
+                ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
 
                 if (ImGui::Button("Create New Body")) {
                     show_create_body_menu = true;
@@ -617,8 +617,8 @@ int main() {
             ImGui::Begin("Performance");
 
             ImGui::Text("Building octree took %i microseconds", octree_build_time);
-            ImGui::Text("Calculating forces took %i microseconds", force_calculation_time);
-            ImGui::Text("Calculating velocities and positions took %i microseconds", vel_pos_update_time);
+            ImGui::Text("Calculating forces took %i microseconds", force_calculation_time*stepsPerVisualFrame);
+            ImGui::Text("Calculating velocities and positions took %i microseconds", vel_pos_update_time*stepsPerVisualFrame);
             ImGui::Text("Rendering ImGui took %i microseconds", imgui_render_time);
             ImGui::Text("Rendering with OpenGL took %i microseconds", opengl_render_time);
 
@@ -626,16 +626,13 @@ int main() {
         }
         {
             ImGui::Begin("Help");
-
-            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * ImGui::GetColumnWidth());
 
             ImGui::Text("Steps per Octree Rebuild: Rebuilding octrees is computationally expensive. Smaller values are more accurate, especially with rapid or chaotic motion.");
-            ImGui::Text("Steps per Visual Frame: This allows you to subdivide the computation in between frames. Use this to improve accuracy at the cost of performance.");
-            ImGui::Text("Barnes-Hut Opening Angle: This controls performance vs accuracy tradeoff. Smaller values are more accurate.");
-
             ImGui::Spacing();
-            ImGui::Text("Barnes-Hut Approximation is a process that utilizes spatial partitioning techniques like octrees in order to optimize calculation of forces. This can be used for gravity, collisions, magnetism, etc.");
-            ImGui::Text("Octrees are a recursive datatype used for recursively partitioning groups of objects in space.");
+            ImGui::Text("Subdivisions: This allows you to subdivide the computation in between frames. Use this to improve accuracy at the cost of performance.");
+            ImGui::Spacing();
+            ImGui::Text("Theta: This is the Barnes-Hut opening angle and controls performance vs accuracy tradeoff. Smaller values are more accurate but approach O(n^2) territory.");
 
             ImGui::End();
         }
