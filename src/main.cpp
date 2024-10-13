@@ -59,6 +59,9 @@ long int vel_pos_update_time = 0;
 long int imgui_render_time = 0;
 long int opengl_render_time = 0;
 
+int stepsPerOctreeRebuild = 10;
+int stepsPerVisualFrame = 5;
+
 // default values for creating new objects in the scene
 bool show_create_body_menu = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
@@ -477,6 +480,8 @@ int main() {
     float lastFrame = 0.0f;
     Octree octree;
 
+    int time_since_last_rebuild = 0;
+
     // MAIN LOOP
     while (!glfwWindowShouldClose(window)) {
         // FRAME COUNTING
@@ -492,35 +497,41 @@ int main() {
         std::chrono::time_point<std::chrono::system_clock> finish;
         long int time;
 
-        if (!isPaused) {
-            // BUILD OCTREE
-            auto start = std::chrono::high_resolution_clock::now();
-            octree.build(celestialBodies); // this is the application's main bottleneck, but multithreading didn't add significant performance. TODO: find a better way of doing this
-            finish = std::chrono::high_resolution_clock::now();
-            time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
-            std::cout << "Building octree took: " << time << " microseconds\n";
-            octree_build_time = time;
-            // CALCULATE RELATIVE FORCES FOR ALL BODIES
-            start = std::chrono::high_resolution_clock::now();
-            calculateForcesOmp(celestialBodies, octree.root.get());
-            finish = std::chrono::high_resolution_clock::now();
-            time =  std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
-            std::cout << "Calculating forces took: " << time << " microseconds\n";
-            force_calculation_time = time;
+        octree.build(celestialBodies);
 
-            // UPDATE VELOCITY AND POSITION FOR ALL BODIES
-            start = std::chrono::high_resolution_clock::now();
-            for (auto& body : celestialBodies) {
-                body.update(deltaTime * time_step);
+        if (!isPaused) {
+
+            // BUILD OCTREE
+            if (time_since_last_rebuild >= stepsPerOctreeRebuild) {
+                auto start = std::chrono::high_resolution_clock::now();
+                octree.build(celestialBodies);
+                auto finish = std::chrono::high_resolution_clock::now();
+                octree_build_time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+                time_since_last_rebuild = 0;
+                std::cout << "octree build time: " << octree_build_time << std::endl;
             }
-            totalElapsedTime += deltaTime * time_step;
-            finish = std::chrono::high_resolution_clock::now();
-            time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
-            std::cout << "Updating velocity and position took: " << time << " microseconds\n";
-            vel_pos_update_time = time;
+            time_since_last_rebuild++;
+
+            // DO PHYSICS
+            for (int i = 0; i < stepsPerVisualFrame; i++) { // Subdivide simulation into smaller slices if necessary
+                // CALCULATE RELATIVE FORCES FOR ALL BODIES
+                auto start = std::chrono::high_resolution_clock::now();
+                calculateForcesOmp(celestialBodies, octree.root.get());
+                auto finish = std::chrono::high_resolution_clock::now();
+                force_calculation_time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+
+                // UPDATE VELOCITY AND POSITION FOR ALL BODIES
+                start = std::chrono::high_resolution_clock::now();
+                for (auto& body : celestialBodies) {
+                    body.update(deltaTime * time_step / stepsPerVisualFrame);
+                }
+                totalElapsedTime += deltaTime * time_step / stepsPerVisualFrame;
+                finish = std::chrono::high_resolution_clock::now();
+                vel_pos_update_time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+            }
         }
 
-        // ImGui
+        // DO IMGUI THINGS
         start = std::chrono::high_resolution_clock::now();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -529,7 +540,6 @@ int main() {
         glClearColor(0.0f, 0.02f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ImGUI
         {
             ImGui::Begin("Controls");
 
@@ -546,6 +556,9 @@ int main() {
                 // Time step control
                 ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
 
+                ImGui::SliderInt("Steps per Octree Rebuild", &stepsPerOctreeRebuild, 1, 50);
+                ImGui::SliderInt("Steps per Visual Frame", &stepsPerVisualFrame, 1, 100);
+
                 ImGui::SliderFloat("Barnes-Hut Theta", &theta, 0.1f, 2.0f, "%.1f");
 
                 if (ImGui::Button("Create New Body")) {
@@ -555,8 +568,7 @@ int main() {
                 ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
             ImGui::End();
-        }
-        {
+
             ImGui::Begin("Data");
 
             ImGui::Text("Simulated time per frame: %.2f seconds", time_step);
@@ -616,6 +628,12 @@ int main() {
             ImGui::Begin("Help");
 
             ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+
+            ImGui::Text("Steps per Octree Rebuild: Rebuilding octrees is computationally expensive. Smaller values are more accurate, especially with rapid or chaotic motion.");
+            ImGui::Text("Steps per Visual Frame: This allows you to subdivide the computation in between frames. Use this to improve accuracy at the cost of performance.");
+            ImGui::Text("Barnes-Hut Opening Angle: This controls performance vs accuracy tradeoff. Smaller values are more accurate.");
+
+            ImGui::Spacing();
             ImGui::Text("Barnes-Hut Approximation is a process that utilizes spatial partitioning techniques like octrees in order to optimize calculation of forces. This can be used for gravity, collisions, magnetism, etc.");
             ImGui::Text("Octrees are a recursive datatype used for recursively partitioning groups of objects in space.");
 
@@ -650,7 +668,7 @@ int main() {
 
         finish = std::chrono::high_resolution_clock::now();
         time =  std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
-        std::cout << "ImGUI setup took: " << time << " microseconds\n";
+        // std::cout << "ImGUI setup took: " << time << " microseconds\n";
         imgui_render_time = time;
 
         // DO GRAPHICS STUFF
@@ -698,11 +716,11 @@ int main() {
         glfwPollEvents();
         finish = std::chrono::high_resolution_clock::now();
         time = std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count();
-        std::cout << "Rendering stuff took: " << time << " microseconds\n";
+        // std::cout << "Rendering stuff took: " << time << " microseconds\n";
         opengl_render_time = time;
 
         auto bigFinish = std::chrono::high_resolution_clock::now();
-        std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
+        // std::cout << "\nOverall, this frame took: " << std::chrono::duration_cast<std::chrono::microseconds>(bigFinish-bigStart).count() << " microseconds\n\n";
     }
 
     delete pointVBO;
