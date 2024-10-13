@@ -1,3 +1,3 @@
 # README
 
-JOpenGL is now public
+Universe Simulator is now public. PRs are welcome.
