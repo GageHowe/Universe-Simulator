@@ -73,7 +73,6 @@ glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
 double totalElapsedTime = 0.0; // simulation time
 double realTimeElapsed = 0.0;
 double frameSimTime = 0.0;
-double frameRealTime = 0.0;
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -489,9 +488,6 @@ int main() {
         float currentFrame = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
-        frameRealTime = deltaTime;
-        realTimeElapsed += deltaTime;
-        frameSimTime = deltaTime * time_step;
 
         std::chrono::time_point<std::chrono::system_clock> start;
         std::chrono::time_point<std::chrono::system_clock> finish;
@@ -500,7 +496,8 @@ int main() {
         octree.build(celestialBodies);
 
         if (!isPaused) {
-
+            frameSimTime = deltaTime * time_step;
+            realTimeElapsed += deltaTime;
             // BUILD OCTREE
             if (time_since_last_rebuild >= stepsPerOctreeRebuild) {
                 auto start = std::chrono::high_resolution_clock::now();
@@ -529,6 +526,8 @@ int main() {
                 finish = std::chrono::high_resolution_clock::now();
                 vel_pos_update_time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
             }
+        } else {
+            frameSimTime = 0;
         }
 
         // DO IMGUI THINGS
@@ -571,7 +570,7 @@ int main() {
 
             ImGui::Begin("Data");
 
-            ImGui::Text("Simulated time per frame: %.2f seconds", time_step);
+            ImGui::Text("Simulated time per frame: %.3f seconds", frameSimTime);
 
             // Convert total elapsed time to appropriate units
             if (totalElapsedTime < 60) {
@@ -588,25 +587,25 @@ int main() {
             ImGui::Text("Real time elapsed: %.2f seconds", realTimeElapsed);
 
             // Calculate and display current simulation speed
-            double currentSimulationSpeed = frameSimTime / frameRealTime;
+            double currentSimulationSpeed = (frameSimTime / deltaTime);
             if (currentSimulationSpeed < 1) {
-                ImGui::Text("Simulation speed: %.2f simulated seconds per real second%s",
+                ImGui::Text("Simulation speed: %.3f simulated seconds per real second%s",
                             currentSimulationSpeed,
                             isPaused ? " (Paused)" : "");
             } else if (currentSimulationSpeed < 60) {
-                ImGui::Text("Simulation speed: %.2fx real time%s",
+                ImGui::Text("Simulation speed: %.3fx real time%s",
                             currentSimulationSpeed,
                             isPaused ? " (Paused)" : "");
             } else if (currentSimulationSpeed < 3600) {
-                ImGui::Text("Simulation speed: %.2f simulated minutes per real second%s",
+                ImGui::Text("Simulation speed: %.3f simulated minutes per real second%s",
                             currentSimulationSpeed / 60.0,
                             isPaused ? " (Paused)" : "");
             } else if (currentSimulationSpeed < 86400) {
-                ImGui::Text("Simulation speed: %.2f simulated hours per real second%s",
+                ImGui::Text("Simulation speed: %.3f simulated hours per real second%s",
                             currentSimulationSpeed / 3600.0,
                             isPaused ? " (Paused)" : "");
             } else {
-                ImGui::Text("Simulation speed: %.2f simulated days per real second%s",
+                ImGui::Text("Simulation speed: %.3f simulated days per real second%s",
                             currentSimulationSpeed / 86400.0,
                             isPaused ? " (Paused)" : "");
             }
@@ -633,7 +632,8 @@ int main() {
             ImGui::Text("Subdivisions: This allows you to subdivide the computation in between frames. Use this to improve accuracy at the cost of performance.");
             ImGui::Spacing();
             ImGui::Text("Theta: This is the Barnes-Hut opening angle and controls performance vs accuracy tradeoff. Smaller values are more accurate but approach O(n^2) territory.");
-
+            ImGui::Spacing();
+            ImGui::Text("Simulation speed: This is dynamically computed as the ratio between simulation time and real time. It may look hard-coded due to its unwavering accuracy. It's not.");
             ImGui::End();
         }
         if (show_create_body_menu) {
