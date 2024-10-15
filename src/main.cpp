@@ -661,7 +661,7 @@ int main() {
 
             if (ImGui::BeginTable("Bodies Table", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY))
             {
-                ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
+                ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableSetupColumn("ID");
                 ImGui::TableSetupColumn("Position (Mm)");
                 ImGui::TableSetupColumn("Velocity (Mm/s)");
@@ -673,22 +673,68 @@ int main() {
 
                 for (size_t i = 0; i < celestialBodies.size(); i++)
                 {
-                    const auto& body = celestialBodies[i];
+                    auto& body = celestialBodies[i];
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::Text("%zu", i);
+
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2f, %.2f, %.2f", body.position.x, body.position.y, body.position.z);
+                    {
+                        ImGui::PushID((int)(i * 7 + 0)); // this is very hacky but it works for now
+                        ImGui::InputDouble("X", &body.position.x, 0.0, 0.0, "%.2f");
+                        ImGui::InputDouble("Y", &body.position.y, 0.0, 0.0, "%.2f");
+                        ImGui::InputDouble("Z", &body.position.z, 0.0, 0.0, "%.2f");
+                        ImGui::PopID();
+                    }
+
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2f, %.2f, %.2f", body.velocity.x, body.velocity.y, body.velocity.z);
+                    {
+                        ImGui::PushID((int)(i * 7 + 1));
+                        ImGui::InputDouble("X", &body.velocity.x, 0.0, 0.0, "%.2f");
+                        ImGui::InputDouble("Y", &body.velocity.y, 0.0, 0.0, "%.2f");
+                        ImGui::InputDouble("Z", &body.velocity.z, 0.0, 0.0, "%.2f");
+                        ImGui::PopID();
+                    }
+
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2e, %.2e, %.2e", body.force.x, body.force.y, body.force.z);
+                    {
+                        ImGui::PushID((int)(i * 7 + 2));
+                        ImGui::InputDouble("X", &body.force.x, 0.0, 0.0, "%.2e");
+                        ImGui::InputDouble("Y", &body.force.y, 0.0, 0.0, "%.2e");
+                        ImGui::InputDouble("Z", &body.force.z, 0.0, 0.0, "%.2e");
+                        ImGui::PopID();
+                    }
+
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2e", body.mass);
+                    {
+                        ImGui::PushID((int)(i * 7 + 3));
+                        if (ImGui::InputDouble("##Mass", &body.mass, 0.0, 0.0, "%.3e"))
+                        {
+                            if (body.mass <= 0) body.mass = std::numeric_limits<double>::min();
+                        }
+                        ImGui::PopID();
+                    }
+
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.2f", body.radius);
+                    {
+                        ImGui::PushID((int)(i * 7 + 4));
+                        if (ImGui::InputDouble("##Radius", &body.radius, 0.0, 0.0, "%.2f"))
+                        {
+                            if (body.radius <= 0) body.radius = std::numeric_limits<double>::min();
+                        }
+                        ImGui::PopID();
+                    }
+
                     ImGui::TableNextColumn();
-                    ImGui::ColorButton("##color", ImVec4(body.color.r, body.color.g, body.color.b, 1.0f), 0, ImVec2(20,20));
+                    {
+                        ImGui::PushID((int)(i * 7 + 5));
+                        float color[3] = {body.color.r, body.color.g, body.color.b};
+                        if (ImGui::ColorEdit3("##Color", color, ImGuiColorEditFlags_NoInputs))
+                        {
+                            body.color = glm::vec3(color[0], color[1], color[2]);
+                        }
+                        ImGui::PopID();
+                    }
                 }
                 ImGui::EndTable();
             }
