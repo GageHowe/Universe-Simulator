@@ -11,7 +11,6 @@
 #include <thread>
 #include <cstdio>
 #include <omp.h>
-#include <mutex>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -65,7 +64,6 @@ int stepsPerOctreeRebuild = 10;
 int stepsPerVisualFrame = 5;
 
 std::vector<CelestialBody> celestialBodies;
-std::mutex mutex; // for threadsafe insertion/deletion
 
 // default values for creating new objects in the scene
 bool show_create_body_menu = false;
@@ -372,7 +370,6 @@ void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode
 }
 
 void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
-    std::lock_guard<std::mutex> lock(mutex);
     #pragma omp parallel for
     for (auto & body : bodies) {
         calculateForce(&body, root);
@@ -380,7 +377,6 @@ void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* ro
 }
 
 void create_sun() {
-    std::lock_guard<std::mutex> lock(mutex);
     celestialBodies.emplace_back(
         dvec3(0.0, 0.0, 0.0),  // Position in Mm
         dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
@@ -546,6 +542,8 @@ int main() {
             frameSimTime = 0;
         }
 
+        numObjects = celestialBodies.size();
+
         // DO IMGUI THINGS
         start = std::chrono::high_resolution_clock::now();
         ImGui_ImplOpenGL3_NewFrame();
@@ -558,24 +556,24 @@ int main() {
         {
             ImGui::Begin("Controls");
 
-                // Pause button
-                if (ImGui::Button(isPaused ? "Resume" : "Pause")) {
-                    isPaused = !isPaused;
-                }
-                ImGui::SameLine();
-                ImGui::Text(isPaused ? "Paused" : "Running");
+            // Pause button
+            if (ImGui::Button(isPaused ? "Resume" : "Pause")) {
+                isPaused = !isPaused;
+            }
+            ImGui::SameLine();
+            ImGui::Text(isPaused ? "Paused" : "Running");
 
-                // Time step control
-                ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
+            // Time step control
+            ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 3600.0f, "%.1f");
 
-                ImGui::SliderInt("Steps per Octree Rebuild", &stepsPerOctreeRebuild, 1, 50);
-                ImGui::SliderInt("Subdivisions", &stepsPerVisualFrame, 1, 100);
+            ImGui::SliderInt("Steps per Octree Rebuild", &stepsPerOctreeRebuild, 1, 50);
+            ImGui::SliderInt("Subdivisions", &stepsPerVisualFrame, 1, 100);
 
-                ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
+            ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
 
-                if (ImGui::Button("Create New Body")) {
-                    show_create_body_menu = true;
-                }
+            if (ImGui::Button("Create New Body")) {
+                show_create_body_menu = true;
+            }
 
             if (ImGui::Button("Create Sun")) {
                 create_sun();
@@ -583,7 +581,7 @@ int main() {
             // create_sun();
             // create_10000();
 
-                ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
             ImGui::End();
 
@@ -656,6 +654,45 @@ int main() {
             ImGui::Text("Theta: This is the Barnes-Hut opening angle and controls performance vs accuracy tradeoff. Smaller values are more accurate but approach O(n^2) territory.");
             ImGui::Spacing();
             ImGui::Text("Simulation speed: This is dynamically computed as the ratio between simulation time and real time. It may look hard-coded due to its unwavering accuracy. It's not.");
+            ImGui::End();
+        }
+        {
+            ImGui::Begin("Celestial Bodies Data");
+
+            if (ImGui::BeginTable("Bodies Table", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY))
+            {
+                ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
+                ImGui::TableSetupColumn("ID");
+                ImGui::TableSetupColumn("Position (Mm)");
+                ImGui::TableSetupColumn("Velocity (Mm/s)");
+                ImGui::TableSetupColumn("Force (N)");
+                ImGui::TableSetupColumn("Mass (Rg)");
+                ImGui::TableSetupColumn("Radius (Mm)");
+                ImGui::TableSetupColumn("Color");
+                ImGui::TableHeadersRow();
+
+                for (size_t i = 0; i < celestialBodies.size(); i++)
+                {
+                    const auto& body = celestialBodies[i];
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%zu", i);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.2f, %.2f, %.2f", body.position.x, body.position.y, body.position.z);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.2f, %.2f, %.2f", body.velocity.x, body.velocity.y, body.velocity.z);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.2e, %.2e, %.2e", body.force.x, body.force.y, body.force.z);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.2e", body.mass);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.2f", body.radius);
+                    ImGui::TableNextColumn();
+                    ImGui::ColorButton("##color", ImVec4(body.color.r, body.color.g, body.color.b, 1.0f), 0, ImVec2(20,20));
+                }
+                ImGui::EndTable();
+            }
+
             ImGui::End();
         }
         if (show_create_body_menu) {
