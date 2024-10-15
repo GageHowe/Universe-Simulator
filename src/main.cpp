@@ -67,6 +67,10 @@ std::vector<CelestialBody> celestialBodies;
 
 // default values for creating new objects in the scene
 bool show_create_body_menu = false;
+bool show_table = false;
+bool show_performance = false;
+bool show_help = false;
+bool show_data = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
 glm::dvec3 new_body_velocity(0.0, 0.0, 0.0);
 double new_body_radius = 1.0;
@@ -574,18 +578,32 @@ int main() {
             if (ImGui::Button("Create New Body")) {
                 show_create_body_menu = true;
             }
+            if (ImGui::Button("Show Body Editor")) {
+                show_table = true;
+            }
+            if (ImGui::Button("Show Performance Dialog")) {
+                show_performance = true;
+            }
+            if (ImGui::Button("Show Help Menu")) {
+                show_help = true;
+            }
+            if (ImGui::Button("Show Data Menu")) {
+                show_data = true;
+            }
 
             if (ImGui::Button("Create Sun")) {
                 create_sun();
             }
-            // create_sun();
-            // create_10000();
+            if (ImGui::Button("Create 10000")) {
+                create_10000();
+            }
 
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
             ImGui::End();
-
-            ImGui::Begin("Data");
+        }
+        if (show_data) {
+            ImGui::Begin("Data", &show_data);
 
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::Text("%d Objects", numObjects);
@@ -632,8 +650,8 @@ int main() {
 
             ImGui::End();
         }
-        {
-            ImGui::Begin("Performance");
+        if (show_performance) {
+            ImGui::Begin("Performance", &show_performance);
 
             ImGui::Text("Building octree took %i microseconds", octree_build_time);
             ImGui::Text("Calculating forces took %i microseconds", force_calculation_time*stepsPerVisualFrame);
@@ -643,8 +661,8 @@ int main() {
 
             ImGui::End();
         }
-        {
-            ImGui::Begin("Help");
+        if (show_help) {
+            ImGui::Begin("Help", &show_help);
             ImGui::PushTextWrapPos(ImGui::GetFontSize() * ImGui::GetColumnWidth());
 
             ImGui::Text("Steps per Octree Rebuild: Rebuilding octrees is computationally expensive. Smaller values are more accurate, especially with rapid or chaotic motion.");
@@ -656,8 +674,9 @@ int main() {
             ImGui::Text("Simulation speed: This is dynamically computed as the ratio between simulation time and real time. It may look hard-coded due to its unwavering accuracy. It's not.");
             ImGui::End();
         }
+        if (show_table)
         {
-            ImGui::Begin("Celestial Bodies Data");
+            ImGui::Begin("Celestial Bodies Editor", &show_table ); // the bool reference makes an x to close out the window and reset the bool
 
             if (ImGui::BeginTable("Bodies Table", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY))
             {
