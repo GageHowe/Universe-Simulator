@@ -11,6 +11,7 @@
 #include <thread>
 #include <cstdio>
 #include <omp.h>
+#include <mutex>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -30,6 +31,7 @@
 #include "EBO.h"
 #include "Camera.h"
 
+class CelestialBody;
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
@@ -62,6 +64,9 @@ long int opengl_render_time = 0;
 int stepsPerOctreeRebuild = 10;
 int stepsPerVisualFrame = 5;
 
+std::vector<CelestialBody> celestialBodies;
+std::mutex mutex; // for threadsafe insertion/deletion
+
 // default values for creating new objects in the scene
 bool show_create_body_menu = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
@@ -73,6 +78,8 @@ glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
 double totalElapsedTime = 0.0; // simulation time
 double realTimeElapsed = 0.0;
 double frameSimTime = 0.0;
+
+const double MIN_NODE_SIZE = 1e-6; // this stops a stack overflow when objects occupy exactly the same point in space
 
 #define PI 3.14159265
 using dvec3 = glm::dvec3; // double precision vectors
@@ -248,7 +255,13 @@ public:
                 subdivide();
                 insertToChild(existingBody);
             }
-            insertToChild(body);
+
+            // Add a base case to stop recursion
+            if (size > MIN_NODE_SIZE) {
+                insertToChild(body);
+            } else {
+                bodies.push_back(body);
+            }
 
             // Update center of mass and total mass
             dvec3 weightedPos = centerOfMass * totalMass + body->position * body->mass;
@@ -359,9 +372,43 @@ void calculateForcesThreads(std::vector<CelestialBody>& bodies, const OctreeNode
 }
 
 void calculateForcesOmp(std::vector<CelestialBody>& bodies, const OctreeNode* root) {
-#pragma omp parallel for
+    std::lock_guard<std::mutex> lock(mutex);
+    #pragma omp parallel for
     for (auto & body : bodies) {
         calculateForce(&body, root);
+    }
+}
+
+void create_sun() {
+    std::lock_guard<std::mutex> lock(mutex);
+    celestialBodies.emplace_back(
+        dvec3(0.0, 0.0, 0.0),  // Position in Mm
+        dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
+        std::cbrt(1.989 * objectSize),  // Radius in Mm (Sun's radius is about 0.696 Mm)
+        1.989,  // Mass in Rg (Sun's mass is about 1.989 Rg)
+        glm::vec3(1.0f, 0.9f, 0.2f)
+    );
+}
+
+void create_10000() {
+    std::uniform_real_distribution unif(1e-6, 1e-3);  // Mass range in Rg
+    std::default_random_engine re;
+
+    for (int i = 0; i < 10000; ++i) {
+        glm::dvec3 position = glm::sphericalRand(150.0);  // Positions up to 150 Mm
+        glm::dvec3 toCenter = dvec3(0.0f, 0.0f, 0.0f) - position;
+        glm::dvec3 velocity = glm::cross(glm::dvec3(0.0, 0.0, 1.0), toCenter);
+
+        velocity = glm::normalize(velocity) * sqrt(G * 1.989 / glm::length(toCenter));
+
+        double mass = unif(re);
+        celestialBodies.emplace_back(
+            position,
+            velocity,
+            std::cbrt(mass * objectSize),
+            mass,
+            glm::vec3(1.0f, 0.9f, 0.2f)
+        );
     }
 }
 
@@ -405,46 +452,15 @@ int main() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 
-    // Setup Platform/Renderer backends
+    // Setup Platform/Renderer backends for ImGui
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
-    // GENERATE BODIES
-    std::vector<CelestialBody> celestialBodies;
-
-    glm::dvec3 up(0.0, 0.0, 1.0);      // arbitrary rotation axis
-
-    // sun
-    celestialBodies.emplace_back(
-        dvec3(0.0, 0.0, 0.0),  // Position in Mm
-        dvec3(0.0, 0.0, 0.0),  // Velocity in Mm/s
-        std::cbrt(1.989 * objectSize),  // Radius in Mm (Sun's radius is about 0.696 Mm)
-        1.989,  // Mass in Rg (Sun's mass is about 1.989 Rg)
-        glm::vec3(1.0f, 0.9f, 0.2f)
-    );
-
-    std::uniform_real_distribution unif(1e-6, 1e-3);  // Mass range in Rg
-    std::default_random_engine re;
-
-    for (int i = 0; i < 10000; ++i) {
-        glm::dvec3 position = glm::sphericalRand(150.0);  // Positions up to 150 Mm
-        glm::dvec3 toCenter = dvec3(0.0f, 0.0f, 0.0f) - position;
-        glm::dvec3 velocity = glm::cross(up, toCenter);
-
-        velocity = glm::normalize(velocity) * sqrt(G * 1.989 / glm::length(toCenter));
-
-        double mass = unif(re);
-        celestialBodies.emplace_back(
-            position,
-            velocity,
-            std::cbrt(mass * objectSize),
-            mass,
-            glm::vec3(1.0f, 0.9f, 0.2f)
-        );
-    }
+    // create initial bodies
+    // create_sun();
+    // create_10000();
 
     int numObjects = celestialBodies.size();
 
@@ -542,9 +558,6 @@ int main() {
         {
             ImGui::Begin("Controls");
 
-                ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-                ImGui::Text("%d Objects", numObjects);
-
                 // Pause button
                 if (ImGui::Button(isPaused ? "Resume" : "Pause")) {
                     isPaused = !isPaused;
@@ -564,11 +577,20 @@ int main() {
                     show_create_body_menu = true;
                 }
 
+            if (ImGui::Button("Create Sun")) {
+                create_sun();
+            }
+            // create_sun();
+            // create_10000();
+
                 ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
             ImGui::End();
 
             ImGui::Begin("Data");
+
+            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("%d Objects", numObjects);
 
             ImGui::Text("Simulated time per frame: %.3f seconds", frameSimTime);
 
