@@ -207,7 +207,7 @@ public:
         vao.Unbind();
     }
 
-    void update(double dt) {
+    void update(double dt) { // this uses verlet integration
         // First half of position update
         position += velocity * (dt / 2.0);
 
@@ -332,7 +332,7 @@ void calculateForce(CelestialBody* body, const OctreeNode* node) {
     }
 
     double d = glm::length(node->centerOfMass - body->position);
-    if (d < 2) return;  // Prevent division by zero by having bodies ignore each other when within x units
+    if (d < 0.1) return;  // Prevent division by zero by ignoring the case where bodies are too close
 
     if (node->isLeaf() || (node->size / d < theta)) {
         dvec3 direction = glm::normalize(node->centerOfMass - body->position);
