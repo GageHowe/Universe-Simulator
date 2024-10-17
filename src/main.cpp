@@ -579,7 +579,7 @@ int main() {
             ImGui::Text(isPaused ? "Paused" : "Running");
 
             // Time step control
-            ImGui::SliderFloat("Time Step (seconds)", &time_step, 0.1f, 365*3600*24.0f, "%.1f");
+            ImGui::SliderFloat("Time Step (seconds)", &time_step, 60.0f, 365*3600*24.0f, "%.1f");
 
             ImGui::SliderInt("Steps per Octree Rebuild", &stepsPerOctreeRebuild, 1, 50);
             ImGui::SliderInt("Subdivisions", &stepsPerVisualFrame, 1, 100);
