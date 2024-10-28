@@ -11,6 +11,7 @@
 #include <thread>
 #include <cstdio>
 #include <omp.h>
+#include <bits/algorithmfwd.h>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -62,7 +63,7 @@ long int imgui_render_time = 0;
 long int opengl_render_time = 0;
 
 int stepsPerOctreeRebuild = 10;
-int stepsPerVisualFrame = 5;
+int stepsPerVisualFrame = 1;
 
 std::vector<CelestialBody> celestialBodies;
 
@@ -391,6 +392,15 @@ void create_sun() {
     );
 }
 
+void create_sun_2() {
+    new_body_position = dvec3(0.0, 0.0, 0.0);
+    new_body_velocity = dvec3(0.0, 0.0, 0.0);
+    new_body_radius = 695.7 * std::cbrt(objectSize);
+    new_body_mass = 1988000;
+    new_body_color = glm::vec3(1.0f, 0.9f, 0.2f);
+    show_create_body_menu = true;
+}
+
 void create_earth() {
     celestialBodies.emplace_back(
         dvec3(149598, 0.0, 0.0),  // Position in megameters
@@ -401,24 +411,59 @@ void create_earth() {
     );
 }
 
-void create_10000() {
-    std::uniform_real_distribution unif(1e-6, 1e-3);  // Mass range in Rg
-    std::default_random_engine re;
+void create_earth_2() {
+    new_body_position = dvec3(149598, 0.0, 0.0);
+    new_body_velocity = dvec3(0.0, 0.0, std::sqrt(G * 1988000 / 149598));
+    new_body_radius = 6.37814 * std::cbrt(objectSize);
+    new_body_mass = 5.97;
+    new_body_color = glm::vec3(0.1f, 0.9f, 1.0f);
+    show_create_body_menu = true;
+}
 
-    for (int i = 0; i < 10000; ++i) {
-        glm::dvec3 position = glm::sphericalRand(150.0);  // Positions up to 150 Mm
-        glm::dvec3 toCenter = dvec3(0.0f, 0.0f, 0.0f) - position;
-        glm::dvec3 velocity = glm::cross(glm::dvec3(0.0, 0.0, 1.0), toCenter);
+void create_galaxy(int num_bodies = 10000) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
 
-        velocity = glm::normalize(velocity) * sqrt(G * 1.989 / glm::length(toCenter));
+    // Reduced radius and thickness
+    std::uniform_real_distribution<> radius_dist(0.0, 5000.0);   // Reduced from 50000 to 5000 Mm
+    std::uniform_real_distribution<> angle_dist(0.0, 2.0 * PI);
+    std::uniform_real_distribution<> height_dist(-100.0, 100.0); // Reduced thickness from 1000 to 100
+    std::uniform_real_distribution<> mass_dist(0.001, 0.01);     // Reduced masses
 
-        double mass = unif(re);
+    for (int i = 0; i < num_bodies; i++) {
+        double radius = radius_dist(gen);
+        double angle = angle_dist(gen);
+        double height = height_dist(gen);
+
+        dvec3 position(
+            radius * cos(angle),
+            height,
+            radius * sin(angle)
+        );
+
+        // Significantly reduced orbital velocity
+        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.01;  // Reduced factor from 0.7 to 0.01
+
+        dvec3 velocity(
+            -orbital_speed * sin(angle),
+            0.0,
+            orbital_speed * cos(angle)
+        );
+
+        // Color gradient from blue to white based on radius
+        float blue_intensity = static_cast<float>(radius) / 5000.0f;
+        glm::vec3 color(
+            0.5f + 0.5f * blue_intensity,
+            0.5f + 0.5f * blue_intensity,
+            1.0f
+        );
+
         celestialBodies.emplace_back(
             position,
             velocity,
-            std::cbrt(mass * objectSize),
-            mass,
-            glm::vec3(1.0f, 0.9f, 0.2f)
+            10.0 * std::cbrt(objectSize),
+            mass_dist(gen),
+            color
         );
     }
 }
@@ -470,7 +515,7 @@ int main() {
     ImGui_ImplOpenGL3_Init("#version 330");
 
     // create initial bodies
-    // create_sun();
+    // create_sun_2();
     // create_10000();
 
     int numObjects = celestialBodies.size();
@@ -586,9 +631,24 @@ int main() {
 
             ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
 
+            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+            ImGui::Spacing();
+            ImGui::Text("Body Creation");
+
             if (ImGui::Button("Create New Body")) {
                 show_create_body_menu = true;
             }
+            if (ImGui::Button("Create Sun")) {
+                create_sun_2();
+            }
+            if (ImGui::Button("Create Earth")) {
+                create_earth_2();
+            }
+            if (ImGui::Button("Create Galaxy")) {
+                create_galaxy(); // default = 10000
+            }
+
             if (ImGui::Button("Show Body Editor")) {
                 show_table = true;
             }
@@ -601,18 +661,6 @@ int main() {
             if (ImGui::Button("Show Data Menu")) {
                 show_data = true;
             }
-
-            if (ImGui::Button("Create Sun")) {
-                create_sun();
-            }
-            if (ImGui::Button("Create Earth")) {
-                create_earth();
-            }
-            if (ImGui::Button("Create 10000")) {
-                create_10000();
-            }
-
-            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
             ImGui::End();
         }
@@ -791,6 +839,8 @@ int main() {
             ImGui::InputDouble("Mass (Rg)", &new_body_mass, 1e-6, 1e-3, "%.3e");
 
             ImGui::ColorEdit3("Color", &new_body_color[0]);
+
+            ImGui::Spacing();
 
             if (ImGui::Button("Create Body")) {
                 createNewBody(celestialBodies);
