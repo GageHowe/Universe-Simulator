@@ -45,6 +45,7 @@ const double G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gr
 float time_step = 60.0f; // Initial time step (in seconds)
 bool isPaused = true;
 bool useRK4 = false;
+bool allowEngulfment = false;
 
 const double objectSize = 1e12f; // determines visible size for bodies in simulation, arbitrary value
 
@@ -172,28 +173,6 @@ public:
         };
     }
 
-    // RK4 integration update method
-    void rk_update(double dt) {
-        State initial = {position, velocity};
-
-        // Calculate the four RK4 derivatives
-        Derivative a = evaluate(initial, Derivative{dvec3(0), dvec3(0)}, 0.0);
-        Derivative b = evaluate(initial, a, dt*0.5);
-        Derivative c = evaluate(initial, b, dt*0.5);
-        Derivative d = evaluate(initial, c, dt);
-
-        // Calculate weighted sum for position and velocity changes
-        dvec3 dpos = (a.velocity + (b.velocity + c.velocity)*2.0 + d.velocity) * (1.0/6.0);
-        dvec3 dvel = (a.acceleration + (b.acceleration + c.acceleration)*2.0 + d.acceleration) * (1.0/6.0);
-
-        // Update position and velocity
-        position += dpos * dt;
-        velocity += dvel * dt;
-
-        // Reset force for next iteration
-        force = dvec3(0.0, 0.0, 0.0);
-    }
-
     CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
         : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
         double renderScale = 1e-3; // Adjust this factor to make bodies visible
@@ -218,10 +197,11 @@ public:
         delete ebo;
     }
 
-    // Prevent copying
+    // Prevent copying because of potential stack overflow with the octree
     CelestialBody(const CelestialBody&) = delete;
     CelestialBody& operator=(const CelestialBody&) = delete;
 
+    // move operator, just in case
     CelestialBody(CelestialBody&& other) noexcept
         : position(other.position), velocity(other.velocity), force(other.force),
           radius(other.radius), mass(other.mass), color(other.color),
@@ -266,7 +246,7 @@ public:
         vao.Unbind();
     }
 
-    void update(double dt) { // this uses a form of verlet integration
+    void verlet_update(double dt) { // this uses a form of verlet integration
         // First half of position update
         position += velocity * (dt / 2.0);
 
@@ -278,6 +258,28 @@ public:
         position += velocity * (dt / 2.0);
 
         force = dvec3(0.0, 0.0, 0.0);  // Reset force
+    }
+    // RK4 integration update method
+    void rk_update(double dt) {
+        // std::cout << "using rk4 integration" << std::endl;
+        State initial = {position, velocity};
+
+        // Calculate the four RK4 derivatives
+        Derivative a = evaluate(initial, Derivative{dvec3(0), dvec3(0)}, 0.0);
+        Derivative b = evaluate(initial, a, dt*0.5);
+        Derivative c = evaluate(initial, b, dt*0.5);
+        Derivative d = evaluate(initial, c, dt);
+
+        // Calculate weighted sum for position and velocity changes
+        dvec3 dpos = (a.velocity + (b.velocity + c.velocity)*2.0 + d.velocity) * (1.0/6.0);
+        dvec3 dvel = (a.acceleration + (b.acceleration + c.acceleration)*2.0 + d.acceleration) * (1.0/6.0);
+
+        // Update position and velocity
+        position += dpos * dt;
+        velocity += dvel * dt;
+
+        // Reset force for next iteration
+        force = dvec3(0.0, 0.0, 0.0);
     }
 };
 
@@ -385,6 +387,66 @@ public:
     }
 };
 
+void checkAndHandleEngulfment(std::vector<CelestialBody>& bodies) {
+    std::vector<bool> shouldDelete(bodies.size(), false);
+
+    for (size_t i = 0; i < bodies.size(); i++) {
+        if (shouldDelete[i]) continue;
+
+        for (size_t j = i + 1; j < bodies.size(); j++) {
+            if (shouldDelete[j]) continue;
+
+            CelestialBody& body1 = bodies[i];
+            CelestialBody& body2 = bodies[j];
+
+            double distance = glm::length(body1.position - body2.position);
+
+            // Get actual physical radii by removing visualization scaling
+            double radius1 = body1.radius / std::cbrt(objectSize);
+            double radius2 = body2.radius / std::cbrt(objectSize);
+            double combinedRadius = radius1 + radius2;
+
+            if (distance < combinedRadius) {
+                // Determine which body is larger
+                CelestialBody& larger = (body1.mass >= body2.mass) ? body1 : body2;
+                CelestialBody& smaller = (body1.mass >= body2.mass) ? body2 : body1;
+
+                // Calculate new properties using conservation of momentum and mass
+                dvec3 newMomentum = larger.mass * larger.velocity + smaller.mass * smaller.velocity;
+                double newMass = larger.mass + smaller.mass;
+                larger.velocity = newMomentum / newMass;
+                larger.mass = newMass;
+
+                // Update physical radius (using cube root to maintain density)
+                double newPhysicalRadius = std::cbrt(std::pow(radius1, 3) + std::pow(radius2, 3));
+                larger.radius = newPhysicalRadius * std::cbrt(objectSize); // Apply visualization scaling
+
+                // Recreate the mesh with new size
+                createSphereMesh(larger.vertices, larger.indices, static_cast<float>(larger.radius * 1e-3), 10);
+
+                // Update the VBO and EBO with new mesh data
+                larger.vbo->Bind();
+                glBufferData(GL_ARRAY_BUFFER, larger.vertices.size() * sizeof(float), larger.vertices.data(), GL_STATIC_DRAW);
+                larger.vbo->Unbind();
+
+                larger.ebo->Bind();
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, larger.indices.size() * sizeof(unsigned int), larger.indices.data(), GL_STATIC_DRAW);
+                larger.ebo->Unbind();
+
+                // Mark smaller body for deletion
+                shouldDelete[(body1.mass >= body2.mass) ? j : i] = true;
+            }
+        }
+    }
+
+    // Remove engulfed bodies (in reverse order to maintain indices)
+    for (int i = bodies.size() - 1; i >= 0; i--) {
+        if (shouldDelete[i]) {
+            bodies.erase(bodies.begin() + i);
+        }
+    }
+}
+
 void calculateForce(CelestialBody* body, const OctreeNode* node) {
     if (node->isLeaf() && node->bodies.empty()) {
         return;
@@ -482,16 +544,17 @@ void create_galaxy(int num_bodies = 10000) {
     std::random_device rd;
     std::mt19937 gen(rd());
 
+    // Reduced radius and thickness
+    std::uniform_real_distribution<> radius_dist(0.0, 20000.0); // disk radius
     std::uniform_real_distribution<> angle_dist(0.0, 2.0 * PI);
-    std::uniform_real_distribution<> height_dist(-100.0, 100.0);
-    std::uniform_real_distribution<> mass_dist(0.1, 10.0);
+    std::uniform_real_distribution<> height_dist(-100.0, 100.0); // disk thickness
+    std::uniform_real_distribution<> mass_dist(10.0, 0.5);
 
     for (int i = 0; i < num_bodies; i++) {
-
-        double mass = mass_dist(gen);
-        double radius = objectSize * sqrt(mass);
+        double radius = radius_dist(gen);
         double angle = angle_dist(gen);
         double height = height_dist(gen);
+        double mass = mass_dist(gen);
 
         dvec3 position(
             radius * cos(angle),
@@ -499,7 +562,8 @@ void create_galaxy(int num_bodies = 10000) {
             radius * sin(angle)
         );
 
-        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.1;
+        // Significantly reduced orbital velocity
+        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.005;
 
         dvec3 velocity(
             -orbital_speed * sin(angle),
@@ -507,7 +571,7 @@ void create_galaxy(int num_bodies = 10000) {
             orbital_speed * cos(angle)
         );
 
-        // color spectrum thingy
+        // Color gradient from blue to white based on radius
         float blue_intensity = static_cast<float>(radius) / 5000.0f;
         glm::vec3 color(
             0.5f + 0.5f * blue_intensity,
@@ -518,8 +582,8 @@ void create_galaxy(int num_bodies = 10000) {
         celestialBodies.emplace_back(
             position,
             velocity,
-            1.0 * std::cbrt(objectSize),
-            mass_dist(gen),
+            std::cbrt(mass * objectSize),
+            mass,
             color
         );
     }
@@ -639,12 +703,16 @@ int main() {
             time_since_last_rebuild++;
 
             // DO PHYSICS
-            for (int i = 0; i < stepsPerVisualFrame; i++) { // Subdivide simulation into smaller slices if necessary
+            for (int i = 0; i < stepsPerVisualFrame; i++) { // Subdivide simulation into smaller slices if necessary TODO: fix, this doesn't work
                 // CALCULATE RELATIVE FORCES FOR ALL BODIES
                 auto start = std::chrono::high_resolution_clock::now();
                 calculateForcesOmp(celestialBodies, octree.root.get());
                 auto finish = std::chrono::high_resolution_clock::now();
                 force_calculation_time = std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count();
+
+                if (allowEngulfment) {
+                    checkAndHandleEngulfment(celestialBodies);
+                }
 
                 // UPDATE VELOCITY AND POSITION FOR ALL BODIES
                 start = std::chrono::high_resolution_clock::now();
@@ -652,7 +720,7 @@ int main() {
                     if (useRK4) {
                         body.rk_update(deltaTime * time_step / stepsPerVisualFrame);
                     } else {
-                        body.update(deltaTime * time_step / stepsPerVisualFrame);
+                        body.verlet_update(deltaTime * time_step / stepsPerVisualFrame);
                     }
                 }
                 totalElapsedTime += deltaTime * time_step / stepsPerVisualFrame;
@@ -692,6 +760,7 @@ int main() {
 
             ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
             if (ImGui::Checkbox("Use RK4 Integration?", &useRK4)) {}
+            if (ImGui::Checkbox("Allow Engulfment?", &allowEngulfment)) {}
 
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
@@ -710,7 +779,9 @@ int main() {
             if (ImGui::Button("Create Galaxy")) {
                 create_galaxy(); // default = 10000
             }
-
+            if (ImGui::Button("Clear All Bodies")) {
+                celestialBodies.clear();
+            }
             if (ImGui::Button("Show Body Editor")) {
                 show_table = true;
             }
