@@ -44,6 +44,7 @@ const double G = G_SI * Rg_to_kg / (Mm_to_m * Mm_to_m * Mm_to_m); // Adjusted gr
 
 float time_step = 60.0f; // Initial time step (in seconds)
 bool isPaused = true;
+bool useRK4 = false;
 
 const double objectSize = 1e12f; // determines visible size for bodies in simulation, arbitrary value
 
@@ -131,10 +132,67 @@ public:
     double mass;
     glm::vec3 color;
     VAO vao;
-    VBO* vbo;
-    EBO* ebo;
+    VBO* vbo; // unused for now
+    EBO* ebo; // unused for now
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
+
+    struct State {
+        dvec3 position;
+        dvec3 velocity;
+
+        State operator+(const State& other) const {
+            return {position + other.position, velocity + other.velocity};
+        }
+
+        State operator*(double scalar) const {
+            return {position * scalar, velocity * scalar};
+        }
+    };
+
+    struct Derivative {
+        dvec3 velocity;
+        dvec3 acceleration;
+    };
+
+    dvec3 getAcceleration() const {
+        return force / mass;
+    }
+
+    // Calculates the derivative at a given state
+    Derivative evaluate(const State& initial, const Derivative& d, double dt) {
+        State state = {
+            initial.position + d.velocity * dt,
+            initial.velocity + d.acceleration * dt
+        };
+
+        return {
+            state.velocity,
+            force / mass  // Use current accumulated force
+        };
+    }
+
+    // RK4 integration update method
+    void rk_update(double dt) {
+        State initial = {position, velocity};
+
+        // Calculate the four RK4 derivatives
+        Derivative a = evaluate(initial, Derivative{dvec3(0), dvec3(0)}, 0.0);
+        Derivative b = evaluate(initial, a, dt*0.5);
+        Derivative c = evaluate(initial, b, dt*0.5);
+        Derivative d = evaluate(initial, c, dt);
+
+        // Calculate weighted sum for position and velocity changes
+        dvec3 dpos = (a.velocity + (b.velocity + c.velocity)*2.0 + d.velocity) * (1.0/6.0);
+        dvec3 dvel = (a.acceleration + (b.acceleration + c.acceleration)*2.0 + d.acceleration) * (1.0/6.0);
+
+        // Update position and velocity
+        position += dpos * dt;
+        velocity += dvel * dt;
+
+        // Reset force for next iteration
+        force = dvec3(0.0, 0.0, 0.0);
+    }
 
     CelestialBody(const dvec3& pos, const dvec3& vel, double r, double m, const glm::vec3& col)
         : position(pos), velocity(vel), force(0.0, 0.0, 0.0), radius(r), mass(m), color(col), vbo(nullptr), ebo(nullptr) {
@@ -208,7 +266,7 @@ public:
         vao.Unbind();
     }
 
-    void update(double dt) { // this uses verlet integration
+    void update(double dt) { // this uses a form of verlet integration
         // First half of position update
         position += velocity * (dt / 2.0);
 
@@ -424,14 +482,14 @@ void create_galaxy(int num_bodies = 10000) {
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    // Reduced radius and thickness
-    std::uniform_real_distribution<> radius_dist(0.0, 5000.0);   // Reduced from 50000 to 5000 Mm
     std::uniform_real_distribution<> angle_dist(0.0, 2.0 * PI);
-    std::uniform_real_distribution<> height_dist(-100.0, 100.0); // Reduced thickness from 1000 to 100
-    std::uniform_real_distribution<> mass_dist(0.001, 0.01);     // Reduced masses
+    std::uniform_real_distribution<> height_dist(-100.0, 100.0);
+    std::uniform_real_distribution<> mass_dist(0.1, 10.0);
 
     for (int i = 0; i < num_bodies; i++) {
-        double radius = radius_dist(gen);
+
+        double mass = mass_dist(gen);
+        double radius = objectSize * sqrt(mass);
         double angle = angle_dist(gen);
         double height = height_dist(gen);
 
@@ -441,8 +499,7 @@ void create_galaxy(int num_bodies = 10000) {
             radius * sin(angle)
         );
 
-        // Significantly reduced orbital velocity
-        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.01;  // Reduced factor from 0.7 to 0.01
+        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.1;
 
         dvec3 velocity(
             -orbital_speed * sin(angle),
@@ -450,7 +507,7 @@ void create_galaxy(int num_bodies = 10000) {
             orbital_speed * cos(angle)
         );
 
-        // Color gradient from blue to white based on radius
+        // color spectrum thingy
         float blue_intensity = static_cast<float>(radius) / 5000.0f;
         glm::vec3 color(
             0.5f + 0.5f * blue_intensity,
@@ -461,7 +518,7 @@ void create_galaxy(int num_bodies = 10000) {
         celestialBodies.emplace_back(
             position,
             velocity,
-            10.0 * std::cbrt(objectSize),
+            1.0 * std::cbrt(objectSize),
             mass_dist(gen),
             color
         );
@@ -592,7 +649,11 @@ int main() {
                 // UPDATE VELOCITY AND POSITION FOR ALL BODIES
                 start = std::chrono::high_resolution_clock::now();
                 for (auto& body : celestialBodies) {
-                    body.update(deltaTime * time_step / stepsPerVisualFrame);
+                    if (useRK4) {
+                        body.rk_update(deltaTime * time_step / stepsPerVisualFrame);
+                    } else {
+                        body.update(deltaTime * time_step / stepsPerVisualFrame);
+                    }
                 }
                 totalElapsedTime += deltaTime * time_step / stepsPerVisualFrame;
                 finish = std::chrono::high_resolution_clock::now();
@@ -630,6 +691,7 @@ int main() {
             ImGui::SliderInt("Subdivisions", &stepsPerVisualFrame, 1, 100);
 
             ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
+            if (ImGui::Checkbox("Use RK4 Integration?", &useRK4)) {}
 
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
