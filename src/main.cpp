@@ -75,11 +75,14 @@ bool show_table = false;
 bool show_performance = false;
 bool show_help = false;
 bool show_data = false;
+bool renderPoints = true;
+bool renderPlanets = false;
 glm::dvec3 new_body_position(0.0, 0.0, 0.0);
 glm::dvec3 new_body_velocity(0.0, 0.0, 0.0);
 double new_body_radius = 1.0;
 double new_body_mass = 1e7;
 glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
+glm::dvec3 galaxy_position(0.0, 0.0, 0.0);
 
 double totalElapsedTime = 0.0; // simulation time
 double realTimeElapsed = 0.0;
@@ -299,6 +302,7 @@ public:
         return children[0] == nullptr;
     }
 
+    // straight from stack overflow, but it's genius
     int getOctant(const dvec3& position) const {
         int octant = 0;
         if (position.x >= center.x) octant |= 4;
@@ -320,14 +324,14 @@ public:
                 insertToChild(existingBody);
             }
 
-            // Add a base case to stop recursion
+            // base case
             if (size > MIN_NODE_SIZE) {
                 insertToChild(body);
             } else {
                 bodies.push_back(body);
             }
 
-            // Update center of mass and total mass
+            // update center of mass and total mass
             dvec3 weightedPos = centerOfMass * totalMass + body->position * body->mass;
             totalMass += body->mass;
             centerOfMass = weightedPos / totalMass;
@@ -354,7 +358,7 @@ private:
 
 void createNewBody(std::vector<CelestialBody>& celestialBodies) {
     celestialBodies.emplace_back(
-        new_body_position,
+        new_body_position, // these variables global and are changed via GUI; concurrent mutation is not required
         new_body_velocity,
         new_body_radius,
         new_body_mass,
@@ -401,7 +405,6 @@ void checkAndHandleEngulfment(std::vector<CelestialBody>& bodies) {
 
             double distance = glm::length(body1.position - body2.position);
 
-            // Get actual physical radii by removing visualization scaling
             double radius1 = body1.radius / std::cbrt(objectSize);
             double radius2 = body2.radius / std::cbrt(objectSize);
             double combinedRadius = radius1 + radius2;
@@ -557,13 +560,13 @@ void create_galaxy(int num_bodies = 10000) {
         double mass = mass_dist(gen);
 
         dvec3 position(
-            radius * cos(angle),
-            height,
-            radius * sin(angle)
+            galaxy_position.x + radius * cos(angle),
+            galaxy_position.z + height,
+            galaxy_position.y + radius * sin(angle)
         );
 
         // Significantly reduced orbital velocity
-        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.005;
+        double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.01;
 
         dvec3 velocity(
             -orbital_speed * sin(angle),
@@ -760,7 +763,7 @@ int main() {
             ImGui::SliderInt("Steps per Octree Rebuild", &stepsPerOctreeRebuild, 1, 50);
             ImGui::SliderInt("Subdivisions", &stepsPerVisualFrame, 1, 100);
 
-            ImGui::SliderFloat("Theta", &theta, 0.1f, 2.0f, "%.1f");
+            ImGui::SliderFloat("Theta", &theta, 0.0f, 2.0f, "%.1f");
             if (ImGui::Checkbox("Use RK4 Integration?", &useRK4)) {}
             if (ImGui::Checkbox("Allow Engulfment?", &allowEngulfment)) {}
 
@@ -796,6 +799,9 @@ int main() {
             if (ImGui::Button("Show Data Menu")) {
                 show_data = true;
             }
+            ImGui::InputDouble("Galaxy X", &galaxy_position.x, -10000.0f, 10000.0f);
+            ImGui::InputDouble("Galaxy Y", &galaxy_position.y, -10000.0f, 10000.0f);
+            ImGui::InputDouble("Galaxy Z", &galaxy_position.z, -10000.0f, 10000.0f);
 
             ImGui::End();
         }
@@ -805,50 +811,53 @@ int main() {
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::Text("%d Objects", numObjects);
 
-            ImGui::Text("Simulated time per frame: %.3f seconds", frameSimTime);
+            // ImGui::Text("Simulated time per frame: %.3f seconds", frameSimTime);
+            //
+            // // Convert total elapsed time to appropriate units
+            // if (totalElapsedTime < 60) {
+            //     ImGui::Text("Total simulated time: %.2f seconds", totalElapsedTime);
+            // } else if (totalElapsedTime < 3600) {
+            //     ImGui::Text("Total simulated time: %.2f minutes", totalElapsedTime / 60.0);
+            // } else if (totalElapsedTime < 86400) {
+            //     ImGui::Text("Total simulated time: %.2f hours", totalElapsedTime / 3600.0);
+            // } else {
+            //     ImGui::Text("Total simulated time: %.2f days", totalElapsedTime / 86400.0);
+            // }
+            //
+            // // Display real time elapsed
+            // ImGui::Text("Real time elapsed: %.2f seconds", realTimeElapsed);
 
-            // Convert total elapsed time to appropriate units
-            if (totalElapsedTime < 60) {
-                ImGui::Text("Total simulated time: %.2f seconds", totalElapsedTime);
-            } else if (totalElapsedTime < 3600) {
-                ImGui::Text("Total simulated time: %.2f minutes", totalElapsedTime / 60.0);
-            } else if (totalElapsedTime < 86400) {
-                ImGui::Text("Total simulated time: %.2f hours", totalElapsedTime / 3600.0);
-            } else {
-                ImGui::Text("Total simulated time: %.2f days", totalElapsedTime / 86400.0);
-            }
-
-            // Display real time elapsed
-            ImGui::Text("Real time elapsed: %.2f seconds", realTimeElapsed);
-
-            // Calculate and display current simulation speed
-            double currentSimulationSpeed = (frameSimTime / deltaTime);
-            if (currentSimulationSpeed < 1) {
-                ImGui::Text("Simulation speed: %.3f simulated seconds per real second%s",
-                            currentSimulationSpeed,
-                            isPaused ? " (Paused)" : "");
-            } else if (currentSimulationSpeed < 60) {
-                ImGui::Text("Simulation speed: %.3fx real time%s",
-                            currentSimulationSpeed,
-                            isPaused ? " (Paused)" : "");
-            } else if (currentSimulationSpeed < 3600) {
-                ImGui::Text("Simulation speed: %.3f simulated minutes per real second%s",
-                            currentSimulationSpeed / 60.0,
-                            isPaused ? " (Paused)" : "");
-            } else if (currentSimulationSpeed < 86400) {
-                ImGui::Text("Simulation speed: %.3f simulated hours per real second%s",
-                            currentSimulationSpeed / 3600.0,
-                            isPaused ? " (Paused)" : "");
-            } else {
-                ImGui::Text("Simulation speed: %.3f simulated days per real second%s",
-                            currentSimulationSpeed / 86400.0,
-                            isPaused ? " (Paused)" : "");
-            }
+            // // Calculate and display current simulation speed
+            // double currentSimulationSpeed = (frameSimTime / deltaTime);
+            // if (currentSimulationSpeed < 1) {
+            //     ImGui::Text("Simulation speed: %.3f simulated seconds per real second%s",
+            //                 currentSimulationSpeed,
+            //                 isPaused ? " (Paused)" : "");
+            // } else if (currentSimulationSpeed < 60) {
+            //     ImGui::Text("Simulation speed: %.3fx real time%s",
+            //                 currentSimulationSpeed,
+            //                 isPaused ? " (Paused)" : "");
+            // } else if (currentSimulationSpeed < 3600) {
+            //     ImGui::Text("Simulation speed: %.3f simulated minutes per real second%s",
+            //                 currentSimulationSpeed / 60.0,
+            //                 isPaused ? " (Paused)" : "");
+            // } else if (currentSimulationSpeed < 86400) {
+            //     ImGui::Text("Simulation speed: %.3f simulated hours per real second%s",
+            //                 currentSimulationSpeed / 3600.0,
+            //                 isPaused ? " (Paused)" : "");
+            // } else {
+            //     ImGui::Text("Simulation speed: %.3f simulated days per real second%s",
+            //                 currentSimulationSpeed / 86400.0,
+            //                 isPaused ? " (Paused)" : "");
+            // }
 
             ImGui::End();
         }
         if (show_performance) {
             ImGui::Begin("Performance", &show_performance);
+
+            ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("%d Objects", numObjects);
 
             ImGui::Text("Building octree took %i microseconds", octree_build_time);
             ImGui::Text("Calculating forces took %i microseconds", force_calculation_time*stepsPerVisualFrame);
@@ -1019,14 +1028,18 @@ int main() {
         }
 
         // Render points
-        pointShader.Activate();
-        camera.Matrix(fov, near, far, pointShader, "camMatrix");
-        pointVAO.Bind();
-        glDrawArrays(GL_POINTS, 0, pointVertices.size() / 3);
-        pointVAO.Unbind();
+        if (renderPoints) {
+            pointShader.Activate();
+            camera.Matrix(fov, near, far, pointShader, "camMatrix");
+            pointVAO.Bind();
+            glDrawArrays(GL_POINTS, 0, pointVertices.size() / 3);
+            pointVAO.Unbind();
+        }
 
-        for (auto& body : celestialBodies) {
-            body.draw(shader);
+        if (renderPlanets) {
+            for (auto& body : celestialBodies) {
+                body.draw(shader);
+            }
         }
 
         ImGui::Render();
