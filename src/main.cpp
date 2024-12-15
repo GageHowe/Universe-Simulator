@@ -32,8 +32,8 @@
 #include "Camera.h"
 
 class CelestialBody;
-const unsigned int SCR_WIDTH = 1920;
-const unsigned int SCR_HEIGHT = 1080;
+const unsigned int SCR_WIDTH = 2560;
+const unsigned int SCR_HEIGHT = 1440;
 
 // This simulation uses megameters and ronnagram as its base units. This achieves a balance of precision and support for large-scale simulations.
 const double Mm_to_m = 1e6;  // 1 Mm = 1,000,000 m; the moon is 3.476 Mm wide
@@ -83,6 +83,7 @@ double new_body_radius = 1.0;
 double new_body_mass = 1e7;
 glm::vec3 new_body_color(1.0f, 1.0f, 1.0f);
 glm::dvec3 galaxy_position(0.0, 0.0, 0.0);
+glm::dvec3 galaxy_velocity(0.0, 0.0, 0.0);
 
 double totalElapsedTime = 0.0; // simulation time
 double realTimeElapsed = 0.0;
@@ -262,6 +263,7 @@ public:
 
         force = dvec3(0.0, 0.0, 0.0);  // Reset force
     }
+
     // RK4 integration update method
     void rk_update(double dt) {
         // std::cout << "using rk4 integration" << std::endl;
@@ -569,16 +571,15 @@ void create_galaxy(int num_bodies = 10000) {
         double orbital_speed = std::sqrt(G * mass_dist(gen) * radius) * 0.01;
 
         dvec3 velocity(
-            -orbital_speed * sin(angle),
-            0.0,
-            orbital_speed * cos(angle)
+            galaxy_velocity.x + -orbital_speed * sin(angle),
+            galaxy_velocity.z + 0.0,
+            galaxy_velocity.y + orbital_speed * cos(angle)
         );
 
-        // Color gradient from blue to white based on radius
-        float blue_intensity = static_cast<float>(radius) / 5000.0f;
+
         glm::vec3 color(
-            0.5f + 0.5f * blue_intensity,
-            0.5f + 0.5f * blue_intensity,
+            1.0f,
+            1.0f,
             1.0f
         );
 
@@ -769,6 +770,9 @@ int main() {
 
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
+            if (ImGui::Checkbox("Draw planets?", &renderPlanets)) {}
+            if (ImGui::Checkbox("Draw points?", &renderPoints)) {}
+
             ImGui::Spacing();
             ImGui::Text("Body Creation");
 
@@ -802,6 +806,10 @@ int main() {
             ImGui::InputDouble("Galaxy X", &galaxy_position.x, -10000.0f, 10000.0f);
             ImGui::InputDouble("Galaxy Y", &galaxy_position.y, -10000.0f, 10000.0f);
             ImGui::InputDouble("Galaxy Z", &galaxy_position.z, -10000.0f, 10000.0f);
+
+            ImGui::InputDouble("Galaxy vel X", &galaxy_velocity.x, -0.01f, 0.01f);
+            ImGui::InputDouble("Galaxy vel Y", &galaxy_velocity.y, -10000.0f, 10000.0f);
+            ImGui::InputDouble("Galaxy vel Z", &galaxy_velocity.z, -10000.0f, 10000.0f);
 
             ImGui::End();
         }
