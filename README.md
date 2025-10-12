@@ -1,6 +1,8 @@
-# README
+# Universe Simulator
 
-All dependencies are fetched automatically, just use CMake. Currently compiles with all toolchains except Visual Studio
+This is a blazingly fast, pure c++ implementation of Barnes-Hut Approximation. We are able to approximate the cumulative gravitational effect of twenty thousand celestial bodies at 90 steps per second on an AMD Ryzen 7000.
+
+All dependencies are fetched automatically, just run CMake. Currently compiles with all toolchains except Visual Studio
 
 
 
